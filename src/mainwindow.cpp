@@ -73,88 +73,121 @@ MainWindow::~MainWindow()
 void MainWindow::setupUI()
 {
     setWindowTitle("CAN Reader - Scanmatic 2 Pro");
-    setMinimumSize(800, 600);
-    resize(900, 700);
+    setMinimumSize(1000, 700);
+    resize(1200, 800);
+    
+    // Применение стилей
+    setStyleSheet(
+        "QMainWindow { background-color: #f5f5f5; }"
+        "QGroupBox { font-weight: bold; border: 2px solid #cccccc; border-radius: 5px; margin-top: 10px; padding-top: 10px; background-color: white; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
+        "QPushButton { background-color: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; min-width: 100px; }"
+        "QPushButton:hover { background-color: #45a049; }"
+        "QPushButton:pressed { background-color: #3d8b40; }"
+        "QPushButton:disabled { background-color: #cccccc; color: #666666; }"
+        "QLineEdit, QComboBox { border: 2px solid #ddd; border-radius: 4px; padding: 5px; background-color: white; }"
+        "QLineEdit:focus, QComboBox:focus { border: 2px solid #4CAF50; }"
+        "QTableWidget { border: 1px solid #ddd; border-radius: 4px; background-color: white; gridline-color: #e0e0e0; }"
+        "QTableWidget::item { padding: 5px; }"
+        "QTableWidget::item:selected { background-color: #4CAF50; color: white; }"
+        "QHeaderView::section { background-color: #4CAF50; color: white; padding: 8px; border: none; font-weight: bold; }"
+        "QTabWidget::pane { border: 1px solid #ddd; border-radius: 4px; background-color: white; }"
+        "QTabBar::tab { background-color: #e0e0e0; color: #333; padding: 10px 20px; border-top-left-radius: 4px; border-top-right-radius: 4px; }"
+        "QTabBar::tab:selected { background-color: #4CAF50; color: white; }"
+        "QTabBar::tab:hover { background-color: #d0d0d0; }"
+        "QTextBrowser { border: 1px solid #ddd; border-radius: 4px; background-color: #fafafa; font-family: 'Courier New', monospace; }"
+        "QStatusBar { background-color: #e0e0e0; border-top: 1px solid #ccc; }"
+        "QLabel { color: #333; }"
+    );
     
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
     
     QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+    mainLayout->setSpacing(10);
+    mainLayout->setContentsMargins(10, 10, 10, 10);
     
-    // Группа подключения
-    QGroupBox *connectionGroup = new QGroupBox("Подключение", this);
+    // Панель подключения (всегда видна)
+    QGroupBox *connectionGroup = new QGroupBox("🔌 Подключение", this);
     QHBoxLayout *connectionLayout = new QHBoxLayout(connectionGroup);
+    connectionLayout->setSpacing(10);
     
-    QLabel *portLabel = new QLabel("Последовательный порт:", this);
+    connectionLayout->addWidget(new QLabel("Порт:", this));
     m_portCombo = new QComboBox(this);
-    m_portCombo->setMinimumWidth(150);
+    m_portCombo->setMinimumWidth(200);
+    m_portCombo->setEditable(false);
+    connectionLayout->addWidget(m_portCombo);
     
-    QLabel *baudLabel = new QLabel("Скорость (кбит/с):", this);
-    m_baudRateCombo = new QComboBox(this);
-    m_baudRateCombo->addItem("125", 125);
-    m_baudRateCombo->addItem("250", 250);
-    m_baudRateCombo->addItem("500", 500);
-    m_baudRateCombo->addItem("1000", 1000);
-    m_baudRateCombo->setCurrentIndex(1); // 250 по умолчанию
-    m_baudRateCombo->setMinimumWidth(100);
-    
-    m_refreshPortsButton = new QPushButton("Обновить", this);
+    m_refreshPortsButton = new QPushButton("🔄", this);
     m_refreshPortsButton->setToolTip("Обновить список портов");
+    m_refreshPortsButton->setMaximumWidth(40);
     connect(m_refreshPortsButton, &QPushButton::clicked, this, &MainWindow::onRefreshPortsClicked);
+    connectionLayout->addWidget(m_refreshPortsButton);
+    
+    connectionLayout->addWidget(new QLabel("Скорость:", this));
+    m_baudRateCombo = new QComboBox(this);
+    m_baudRateCombo->addItem("125 кбит/с", 125);
+    m_baudRateCombo->addItem("250 кбит/с", 250);
+    m_baudRateCombo->addItem("500 кбит/с", 500);
+    m_baudRateCombo->addItem("1000 кбит/с", 1000);
+    m_baudRateCombo->setCurrentIndex(1);
+    m_baudRateCombo->setMinimumWidth(120);
+    connectionLayout->addWidget(m_baudRateCombo);
     
     m_connectButton = new QPushButton("Подключиться", this);
-    m_connectButton->setMinimumWidth(120);
+    m_connectButton->setMinimumWidth(150);
+    m_connectButton->setStyleSheet("QPushButton { background-color: #2196F3; } QPushButton:hover { background-color: #1976D2; }");
     connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
-    
-    connectionLayout->addWidget(portLabel);
-    connectionLayout->addWidget(m_portCombo);
-    connectionLayout->addWidget(m_refreshPortsButton);
-    connectionLayout->addWidget(baudLabel);
-    connectionLayout->addWidget(m_baudRateCombo);
     connectionLayout->addWidget(m_connectButton);
+    
     connectionLayout->addStretch();
     
-    // Группа отправки сообщений
-    QGroupBox *sendGroup = new QGroupBox("Отправка CAN сообщения", this);
-    QVBoxLayout *sendLayout = new QVBoxLayout(sendGroup);
+    // Главные вкладки
+    QTabWidget *mainTabs = new QTabWidget(this);
     
-    QHBoxLayout *canIdLayout = new QHBoxLayout();
-    QLabel *canIdLabel = new QLabel("CAN ID (hex):", this);
+    // Вкладка CAN
+    QWidget *canTab = new QWidget(this);
+    QVBoxLayout *canTabLayout = new QVBoxLayout(canTab);
+    canTabLayout->setSpacing(10);
+    canTabLayout->setContentsMargins(5, 5, 5, 5);
+    
+    // Отправка сообщений
+    QGroupBox *sendGroup = new QGroupBox("📤 Отправка сообщения", this);
+    QGridLayout *sendLayout = new QGridLayout(sendGroup);
+    sendLayout->setSpacing(10);
+    
+    sendLayout->addWidget(new QLabel("CAN ID (hex):", this), 0, 0);
     m_canIdEdit = new QLineEdit(this);
     m_canIdEdit->setPlaceholderText("123");
-    m_canIdEdit->setMaximumWidth(100);
+    m_canIdEdit->setMaximumWidth(120);
     QRegularExpression hexRegExp("[0-9A-Fa-f]{1,8}");
     m_canIdEdit->setValidator(new QRegularExpressionValidator(hexRegExp, this));
-    canIdLayout->addWidget(canIdLabel);
-    canIdLayout->addWidget(m_canIdEdit);
-    canIdLayout->addStretch();
+    sendLayout->addWidget(m_canIdEdit, 0, 1);
     
-    QHBoxLayout *canDataLayout = new QHBoxLayout();
-    QLabel *canDataLabel = new QLabel("Данные (hex, через пробел):", this);
+    sendLayout->addWidget(new QLabel("Данные (hex):", this), 1, 0);
     m_canDataEdit = new QLineEdit(this);
     m_canDataEdit->setPlaceholderText("01 02 03 04 05 06 07 08");
     QRegularExpression dataRegExp("([0-9A-Fa-f]{2}\\s?)*");
     m_canDataEdit->setValidator(new QRegularExpressionValidator(dataRegExp, this));
-    canDataLayout->addWidget(canDataLabel);
-    canDataLayout->addWidget(m_canDataEdit);
+    sendLayout->addWidget(m_canDataEdit, 1, 1);
     
     m_sendButton = new QPushButton("Отправить", this);
-    m_sendButton->setMinimumWidth(120);
     m_sendButton->setEnabled(false);
+    m_sendButton->setMinimumHeight(35);
+    sendLayout->addWidget(m_sendButton, 0, 2, 2, 1);
     connect(m_sendButton, &QPushButton::clicked, this, &MainWindow::onSendClicked);
     
-    sendLayout->addLayout(canIdLayout);
-    sendLayout->addLayout(canDataLayout);
-    sendLayout->addWidget(m_sendButton, 0, Qt::AlignRight);
+    sendLayout->setColumnStretch(1, 1);
     
     // Фильтры
-    QGroupBox *filterGroup = new QGroupBox("Фильтры CAN ID", this);
+    QGroupBox *filterGroup = new QGroupBox("🔍 Фильтры", this);
     QHBoxLayout *filterLayout = new QHBoxLayout(filterGroup);
+    filterLayout->setSpacing(10);
     
-    m_filterEnabledCheck = new QCheckBox("Включить фильтрацию", this);
+    m_filterEnabledCheck = new QCheckBox("Включить", this);
     m_filterIdEdit = new QLineEdit(this);
     m_filterIdEdit->setPlaceholderText("CAN ID (hex)");
-    m_filterIdEdit->setMaximumWidth(100);
+    m_filterIdEdit->setMaximumWidth(120);
     m_filterIdEdit->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{1,8}"), this));
     m_addFilterButton = new QPushButton("Добавить", this);
     m_clearFiltersButton = new QPushButton("Очистить", this);
@@ -170,20 +203,20 @@ void MainWindow::setupUI()
     filterLayout->addWidget(m_clearFiltersButton);
     filterLayout->addStretch();
     
-    // Лог и таблица
-    QGroupBox *logGroup = new QGroupBox("Лог сообщений", this);
+    // Таблица сообщений
+    QGroupBox *logGroup = new QGroupBox("📋 Сообщения", this);
     QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
+    logLayout->setSpacing(5);
     
     QHBoxLayout *logButtonsLayout = new QHBoxLayout();
-    m_clearLogButton = new QPushButton("Очистить лог", this);
-    m_saveLogButton = new QPushButton("Сохранить лог", this);
+    m_clearLogButton = new QPushButton("Очистить", this);
+    m_saveLogButton = new QPushButton("Сохранить", this);
     connect(m_clearLogButton, &QPushButton::clicked, this, &MainWindow::onClearLogClicked);
     connect(m_saveLogButton, &QPushButton::clicked, this, &MainWindow::onSaveLogClicked);
     logButtonsLayout->addWidget(m_clearLogButton);
     logButtonsLayout->addWidget(m_saveLogButton);
     logButtonsLayout->addStretch();
     
-    // Таблица сообщений
     m_messageTable = new QTableWidget(this);
     m_messageTable->setColumnCount(4);
     m_messageTable->setHorizontalHeaderLabels(QStringList() << "Время" << "ID" << "Данные" << "Направление");
@@ -191,34 +224,44 @@ void MainWindow::setupUI()
     m_messageTable->setAlternatingRowColors(true);
     m_messageTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_messageTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_messageTable->setShowGrid(true);
+    m_messageTable->verticalHeader()->setVisible(false);
+    m_messageTable->setFont(QFont("Courier New", 9));
     
-    // Текстовый лог
+    // Настройка ширины колонок
+    m_messageTable->setColumnWidth(0, 150); // Время
+    m_messageTable->setColumnWidth(1, 100);  // ID
+    m_messageTable->setColumnWidth(2, 300);  // Данные
+    
     m_logTextEdit = new QTextEdit(this);
     m_logTextEdit->setReadOnly(true);
-    m_logTextEdit->setFont(QFont("Courier", 9));
-    m_logTextEdit->setMaximumHeight(150);
-    m_logTextEdit->hide(); // По умолчанию показываем таблицу
+    m_logTextEdit->setFont(QFont("Courier New", 9));
+    m_logTextEdit->setMaximumHeight(120);
+    m_logTextEdit->hide();
     
     logLayout->addLayout(logButtonsLayout);
-    logLayout->addWidget(m_messageTable, 2);
-    logLayout->addWidget(m_logTextEdit, 1);
+    logLayout->addWidget(m_messageTable, 1);
+    logLayout->addWidget(m_logTextEdit);
     
-    // Статус
-    m_statusLabel = new QLabel("Не подключено", this);
-    m_statsLabel = new QLabel("", this);
-    statusBar()->addWidget(m_statusLabel);
-    statusBar()->addPermanentWidget(m_statsLabel);
+    canTabLayout->addWidget(sendGroup);
+    canTabLayout->addWidget(filterGroup);
+    canTabLayout->addWidget(logGroup, 1);
     
-    // Добавление групп в главный layout
-    mainLayout->addWidget(connectionGroup);
-    mainLayout->addWidget(sendGroup);
-    mainLayout->addWidget(filterGroup);
+    mainTabs->addTab(canTab, "CAN");
     
     // Диагностика
     setupDiagnosticUI();
-    mainLayout->addWidget(m_diagnosticTabs);
+    mainTabs->addTab(m_diagnosticTabs, "Диагностика");
     
-    mainLayout->addWidget(logGroup);
+    mainLayout->addWidget(connectionGroup);
+    mainLayout->addWidget(mainTabs, 1);
+    
+    // Статус бар
+    m_statusLabel = new QLabel("● Не подключено", this);
+    m_statusLabel->setStyleSheet("color: #f44336; font-weight: bold;");
+    m_statsLabel = new QLabel("", this);
+    statusBar()->addWidget(m_statusLabel);
+    statusBar()->addPermanentWidget(m_statsLabel);
     
     // Обновление списка портов
     m_canInterface->refreshPortList();
@@ -324,11 +367,11 @@ void MainWindow::onConnectionStatusChanged(bool connected)
 {
     m_isConnected = connected;
     if (connected) {
-        m_statusLabel->setText("Подключено");
-        m_statusLabel->setStyleSheet("color: green;");
+        m_statusLabel->setText("● Подключено");
+        m_statusLabel->setStyleSheet("color: #4CAF50; font-weight: bold;");
     } else {
-        m_statusLabel->setText("Не подключено");
-        m_statusLabel->setStyleSheet("color: red;");
+        m_statusLabel->setText("● Не подключено");
+        m_statusLabel->setStyleSheet("color: #f44336; font-weight: bold;");
     }
 }
 
@@ -581,112 +624,115 @@ void MainWindow::setupDiagnosticUI()
     m_diagnosticTabs = new QTabWidget(this);
     
     // UDS вкладка
-    m_udsGroup = new QGroupBox("UDS (ISO 14229)", this);
-    QVBoxLayout *udsLayout = new QVBoxLayout(m_udsGroup);
+    QWidget *udsTab = new QWidget(this);
+    QVBoxLayout *udsTabLayout = new QVBoxLayout(udsTab);
+    udsTabLayout->setSpacing(10);
+    udsTabLayout->setContentsMargins(5, 5, 5, 5);
+    
+    m_udsGroup = new QGroupBox("📡 UDS (ISO 14229)", this);
+    QGridLayout *udsLayout = new QGridLayout(m_udsGroup);
+    udsLayout->setSpacing(10);
     
     // Чтение DID
-    QHBoxLayout *readDIDLayout = new QHBoxLayout();
-    readDIDLayout->addWidget(new QLabel("DID (hex):", this));
+    udsLayout->addWidget(new QLabel("DID (hex):", this), 0, 0);
     m_udsDIDEdit = new QLineEdit(this);
     m_udsDIDEdit->setPlaceholderText("F190");
-    m_udsDIDEdit->setMaximumWidth(100);
-    QPushButton *readDIDBtn = new QPushButton("Читать DID", this);
+    m_udsDIDEdit->setMaximumWidth(120);
+    udsLayout->addWidget(m_udsDIDEdit, 0, 1);
+    QPushButton *readDIDBtn = new QPushButton("Читать", this);
     connect(readDIDBtn, &QPushButton::clicked, this, &MainWindow::onUDSReadDID);
-    readDIDLayout->addWidget(m_udsDIDEdit);
-    readDIDLayout->addWidget(readDIDBtn);
-    readDIDLayout->addStretch();
+    udsLayout->addWidget(readDIDBtn, 0, 2);
     
     // Запись DID
-    QHBoxLayout *writeDIDLayout = new QHBoxLayout();
-    writeDIDLayout->addWidget(new QLabel("Данные (hex):", this));
+    udsLayout->addWidget(new QLabel("Данные (hex):", this), 1, 0);
     m_udsDataEdit = new QLineEdit(this);
     m_udsDataEdit->setPlaceholderText("01 02 03");
-    QPushButton *writeDIDBtn = new QPushButton("Записать DID", this);
+    udsLayout->addWidget(m_udsDataEdit, 1, 1);
+    QPushButton *writeDIDBtn = new QPushButton("Записать", this);
     connect(writeDIDBtn, &QPushButton::clicked, this, &MainWindow::onUDSWriteDID);
-    writeDIDLayout->addWidget(m_udsDataEdit);
-    writeDIDLayout->addWidget(writeDIDBtn);
-    writeDIDLayout->addStretch();
+    udsLayout->addWidget(writeDIDBtn, 1, 2);
     
     // Чтение памяти
-    QHBoxLayout *readMemLayout = new QHBoxLayout();
-    readMemLayout->addWidget(new QLabel("Адрес:", this));
+    udsLayout->addWidget(new QLabel("Адрес:", this), 2, 0);
     m_udsAddressEdit = new QLineEdit(this);
     m_udsAddressEdit->setPlaceholderText("0x12345678");
     m_udsAddressEdit->setMaximumWidth(150);
-    readMemLayout->addWidget(m_udsAddressEdit);
-    readMemLayout->addWidget(new QLabel("Длина:", this));
+    udsLayout->addWidget(m_udsAddressEdit, 2, 1);
+    udsLayout->addWidget(new QLabel("Длина:", this), 2, 2);
     m_udsLengthEdit = new QLineEdit(this);
     m_udsLengthEdit->setPlaceholderText("16");
     m_udsLengthEdit->setMaximumWidth(80);
+    udsLayout->addWidget(m_udsLengthEdit, 2, 3);
     QPushButton *readMemBtn = new QPushButton("Читать память", this);
     connect(readMemBtn, &QPushButton::clicked, this, &MainWindow::onUDSReadMemory);
-    readMemLayout->addWidget(m_udsLengthEdit);
-    readMemLayout->addWidget(readMemBtn);
-    readMemLayout->addStretch();
+    udsLayout->addWidget(readMemBtn, 2, 4);
     
     // Безопасный доступ
-    QHBoxLayout *securityLayout = new QHBoxLayout();
-    securityLayout->addWidget(new QLabel("Уровень:", this));
+    udsLayout->addWidget(new QLabel("Уровень:", this), 3, 0);
     m_udsSecurityLevelEdit = new QLineEdit(this);
     m_udsSecurityLevelEdit->setPlaceholderText("1");
     m_udsSecurityLevelEdit->setMaximumWidth(80);
+    udsLayout->addWidget(m_udsSecurityLevelEdit, 3, 1);
     QPushButton *securityBtn = new QPushButton("Безопасный доступ", this);
     connect(securityBtn, &QPushButton::clicked, this, &MainWindow::onUDSSecurityAccess);
-    securityLayout->addWidget(m_udsSecurityLevelEdit);
-    securityLayout->addWidget(securityBtn);
-    securityLayout->addStretch();
+    udsLayout->addWidget(securityBtn, 3, 2, 1, 2);
     
-    // Сессия
-    QHBoxLayout *sessionLayout = new QHBoxLayout();
-    sessionLayout->addWidget(new QLabel("Сессия:", this));
+    // Сессия и DTC
+    QHBoxLayout *sessionDtcLayout = new QHBoxLayout();
+    sessionDtcLayout->addWidget(new QLabel("Сессия:", this));
     m_udsSessionEdit = new QLineEdit(this);
     m_udsSessionEdit->setPlaceholderText("1=Default, 2=Programming, 3=Extended");
+    m_udsSessionEdit->setMaximumWidth(200);
+    sessionDtcLayout->addWidget(m_udsSessionEdit);
     QPushButton *sessionBtn = new QPushButton("Начать сессию", this);
     connect(sessionBtn, &QPushButton::clicked, this, &MainWindow::onUDSStartSession);
-    sessionLayout->addWidget(m_udsSessionEdit);
-    sessionLayout->addWidget(sessionBtn);
-    sessionLayout->addStretch();
-    
-    // DTC
-    QHBoxLayout *dtcLayout = new QHBoxLayout();
+    sessionDtcLayout->addWidget(sessionBtn);
+    sessionDtcLayout->addStretch();
     QPushButton *readDTCBtn = new QPushButton("Читать DTC", this);
     QPushButton *clearDTCBtn = new QPushButton("Очистить DTC", this);
     connect(readDTCBtn, &QPushButton::clicked, this, &MainWindow::onUDSReadDTC);
     connect(clearDTCBtn, &QPushButton::clicked, this, &MainWindow::onUDSClearDTC);
-    dtcLayout->addWidget(readDTCBtn);
-    dtcLayout->addWidget(clearDTCBtn);
-    dtcLayout->addStretch();
+    sessionDtcLayout->addWidget(readDTCBtn);
+    sessionDtcLayout->addWidget(clearDTCBtn);
+    udsLayout->addLayout(sessionDtcLayout, 4, 0, 1, 5);
     
-    udsLayout->addLayout(readDIDLayout);
-    udsLayout->addLayout(writeDIDLayout);
-    udsLayout->addLayout(readMemLayout);
-    udsLayout->addLayout(securityLayout);
-    udsLayout->addLayout(sessionLayout);
-    udsLayout->addLayout(dtcLayout);
+    udsLayout->setColumnStretch(1, 1);
+    
+    // Вывод диагностики
+    m_diagnosticOutput = new QTextBrowser(this);
+    m_diagnosticOutput->setFont(QFont("Courier New", 9));
+    m_diagnosticOutput->setMinimumHeight(200);
+    
+    udsTabLayout->addWidget(m_udsGroup);
+    udsTabLayout->addWidget(m_diagnosticOutput, 1);
     
     // OBD-II вкладка
-    m_obd2Group = new QGroupBox("OBD-II (SAE J1979)", this);
-    QVBoxLayout *obd2Layout = new QVBoxLayout(m_obd2Group);
+    QWidget *obd2Tab = new QWidget(this);
+    QVBoxLayout *obd2TabLayout = new QVBoxLayout(obd2Tab);
+    obd2TabLayout->setSpacing(10);
+    obd2TabLayout->setContentsMargins(5, 5, 5, 5);
+    
+    m_obd2Group = new QGroupBox("🚗 OBD-II (SAE J1979)", this);
+    QGridLayout *obd2Layout = new QGridLayout(m_obd2Group);
+    obd2Layout->setSpacing(10);
     
     // Режим и PID
-    QHBoxLayout *pidLayout = new QHBoxLayout();
-    pidLayout->addWidget(new QLabel("Режим:", this));
+    obd2Layout->addWidget(new QLabel("Режим:", this), 0, 0);
     m_obd2ModeCombo = new QComboBox(this);
     m_obd2ModeCombo->addItem("01 - Текущие данные", 0x01);
     m_obd2ModeCombo->addItem("03 - Сохраненные DTC", 0x03);
     m_obd2ModeCombo->addItem("04 - Очистить DTC", 0x04);
     m_obd2ModeCombo->addItem("07 - Ожидающие DTC", 0x07);
     m_obd2ModeCombo->addItem("09 - Информация", 0x09);
-    pidLayout->addWidget(m_obd2ModeCombo);
-    pidLayout->addWidget(new QLabel("PID (hex):", this));
+    obd2Layout->addWidget(m_obd2ModeCombo, 0, 1);
+    obd2Layout->addWidget(new QLabel("PID (hex):", this), 0, 2);
     m_obd2PIDEdit = new QLineEdit(this);
     m_obd2PIDEdit->setPlaceholderText("0C (RPM), 0D (Speed)");
     m_obd2PIDEdit->setMaximumWidth(150);
+    obd2Layout->addWidget(m_obd2PIDEdit, 0, 3);
     QPushButton *readPIDBtn = new QPushButton("Читать PID", this);
     connect(readPIDBtn, &QPushButton::clicked, this, &MainWindow::onOBD2ReadPID);
-    pidLayout->addWidget(m_obd2PIDEdit);
-    pidLayout->addWidget(readPIDBtn);
-    pidLayout->addStretch();
+    obd2Layout->addWidget(readPIDBtn, 0, 4);
     
     // Быстрые команды
     QHBoxLayout *quickLayout = new QHBoxLayout();
@@ -700,20 +746,15 @@ void MainWindow::setupDiagnosticUI()
     quickLayout->addWidget(clearDTCBtn2);
     quickLayout->addWidget(readVINBtn);
     quickLayout->addStretch();
+    obd2Layout->addLayout(quickLayout, 1, 0, 1, 5);
     
-    obd2Layout->addLayout(pidLayout);
-    obd2Layout->addLayout(quickLayout);
+    obd2Layout->setColumnStretch(1, 1);
     
-    // Вывод диагностики
-    m_diagnosticOutput = new QTextBrowser(this);
-    m_diagnosticOutput->setMaximumHeight(150);
-    m_diagnosticOutput->setFont(QFont("Courier", 9));
+    obd2TabLayout->addWidget(m_obd2Group);
+    obd2TabLayout->addWidget(m_diagnosticOutput, 1);
     
-    udsLayout->addWidget(m_diagnosticOutput);
-    obd2Layout->addWidget(m_diagnosticOutput);
-    
-    m_diagnosticTabs->addTab(m_udsGroup, "UDS");
-    m_diagnosticTabs->addTab(m_obd2Group, "OBD-II");
+    m_diagnosticTabs->addTab(udsTab, "UDS");
+    m_diagnosticTabs->addTab(obd2Tab, "OBD-II");
 }
 
 void MainWindow::onUDSReadDID()
