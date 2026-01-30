@@ -154,6 +154,9 @@ set(Qt6_VERSION_MINOR 10)
 set(Qt6_VERSION_PATCH 2)
 # Disable version check to prevent errors
 set(QT_NO_PACKAGE_VERSION_CHECK TRUE)
+
+# Include base Qt6 module with required functions
+include("${CMAKE_CURRENT_LIST_DIR}/Qt6/Qt6Config.cmake")
 QT6_EOF
     
     # Создаем Qt6ConfigVersion.cmake для совместимости
