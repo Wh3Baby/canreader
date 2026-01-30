@@ -4,7 +4,6 @@ on:
   push:
     branches: [ main ]
 
-# Автоматическая очистка старых runs (оставляем только последние 5)
 concurrency:
   group: build-windows
   cancel-in-progress: true
@@ -17,17 +16,15 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Install Qt6
-      uses: qt-actions/setup-qt@v3
+      uses: jurplel/install-qt-action@v4
       with:
         version: '6.5.0'
-        host: 'windows'
-        target: 'desktop'
-        arch: 'win64_msvc2022_64'
         modules: 'qtbase qtserialport'
+        arch: 'win64_msvc2019_64'
     
     - name: Configure CMake
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${{ env.Qt6_DIR }}
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=$env:Qt6_DIR
     
     - name: Build
       run: |
