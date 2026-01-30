@@ -5,10 +5,23 @@ CANInterface::CANInterface(QObject *parent)
     : QObject(parent)
     , m_connected(false)
     , m_currentBaudRate(0)
+    , m_readTimeout(5000)
+    , m_writeTimeout(1000)
+    , m_maxBufferSize(MAX_BUFFER_SIZE)
+    , m_filterEnabled(false)
+    , m_lastSecondMessages(0)
 {
     m_serialPort = new QSerialPort(this);
     QObject::connect(m_serialPort, &QSerialPort::readyRead, this, &CANInterface::onDataReceived);
     QObject::connect(m_serialPort, &QSerialPort::errorOccurred, this, &CANInterface::onSerialError);
+    
+    // Таймер для обновления статистики
+    m_statsTimer = new QTimer(this);
+    QObject::connect(m_statsTimer, &QTimer::timeout, this, &CANInterface::updateStatistics);
+    m_statsTimer->start(1000); // Обновление каждую секунду
+    
+    // Инициализация статистики
+    resetStatistics();
 }
 
 CANInterface::~CANInterface()
@@ -34,9 +47,15 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
     m_serialPort->setPortName(portName);
     
     // Scanmatic 2 Pro использует стандартные скорости последовательного порта
-    // Для CAN 250 кбит/с используем 115200 бод
-    // Для CAN 500 кбит/с используем 230400 бод
-    int serialBaudRate = (baudRateKbps == 500) ? 230400 : 115200;
+    // Маппинг скоростей CAN на скорости последовательного порта
+    int serialBaudRate = 115200; // По умолчанию
+    switch (baudRateKbps) {
+        case 125:  serialBaudRate = 57600;  break;
+        case 250:  serialBaudRate = 115200; break;
+        case 500:  serialBaudRate = 230400; break;
+        case 1000: serialBaudRate = 460800; break;
+        default:   serialBaudRate = 115200; break;
+    }
     m_serialPort->setBaudRate(serialBaudRate);
     m_serialPort->setDataBits(QSerialPort::Data8);
     m_serialPort->setParity(QSerialPort::NoParity);
@@ -54,13 +73,27 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
         QByteArray initCmd;
         initCmd.append(FRAME_START);
         initCmd.append(static_cast<quint8>(0x01)); // Команда инициализации
-        initCmd.append(static_cast<quint8>(baudRateKbps == 500 ? 0x02 : 0x01)); // 0x01 = 250, 0x02 = 500
+        // Маппинг скорости CAN на код команды
+        quint8 speedCode = 0x01; // По умолчанию 250
+        switch (baudRateKbps) {
+            case 125:  speedCode = 0x00; break;
+            case 250:  speedCode = 0x01; break;
+            case 500:  speedCode = 0x02; break;
+            case 1000: speedCode = 0x03; break;
+            default:   speedCode = 0x01; break;
+        }
+        initCmd.append(speedCode);
         initCmd.append(static_cast<quint8>(0x00)); // Резерв
         initCmd.append(FRAME_END);
         
         m_serialPort->write(initCmd);
-        m_serialPort->waitForBytesWritten(1000);
+        if (!m_serialPort->waitForBytesWritten(m_writeTimeout)) {
+            emit errorOccurred("Таймаут при инициализации адаптера");
+            m_serialPort->close();
+            return false;
+        }
         
+        resetStatistics();
         emit connectionStatusChanged(true);
         return true;
     } else {
@@ -100,10 +133,19 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
     qint64 bytesWritten = m_serialPort->write(frame);
     
     if (bytesWritten == frame.size()) {
-        m_serialPort->waitForBytesWritten(100);
-        return true;
+        if (m_serialPort->waitForBytesWritten(m_writeTimeout)) {
+            // Обновление статистики
+            m_stats.messagesSent++;
+            m_stats.messagesPerId[canId]++;
+            emit statisticsUpdated();
+            return true;
+        } else {
+            emit errorOccurred("Таймаут при записи в порт");
+            return false;
+        }
     } else {
-        emit errorOccurred("Ошибка записи в порт");
+        emit errorOccurred(QString("Ошибка записи в порт: записано %1 из %2 байт").arg(bytesWritten).arg(frame.size()));
+        m_stats.errorsCount++;
         return false;
     }
 }
@@ -150,11 +192,107 @@ void CANInterface::refreshPortList()
     // Метод для обновления списка портов (можно вызывать периодически)
 }
 
+void CANInterface::setFilterEnabled(bool enabled)
+{
+    m_filterEnabled = enabled;
+}
+
+void CANInterface::addFilterId(quint32 id, bool allow)
+{
+    m_filterIds[id] = allow;
+}
+
+void CANInterface::clearFilters()
+{
+    m_filterIds.clear();
+}
+
+bool CANInterface::isMessageFiltered(quint32 id) const
+{
+    if (!m_filterEnabled) {
+        return false; // Фильтр отключен, пропускаем все
+    }
+    
+    if (m_filterIds.contains(id)) {
+        return !m_filterIds[id]; // Если в списке и false - фильтруем
+    }
+    
+    // Если ID нет в списке, пропускаем (можно изменить логику)
+    return false;
+}
+
+Statistics CANInterface::getStatistics() const
+{
+    return m_stats;
+}
+
+void CANInterface::resetStatistics()
+{
+    m_stats.messagesSent = 0;
+    m_stats.messagesReceived = 0;
+    m_stats.errorsCount = 0;
+    m_stats.firstMessageTime = QDateTime();
+    m_stats.lastMessageTime = QDateTime();
+    m_stats.messagesPerId.clear();
+    m_lastSecondMessages = 0;
+    m_lastSecondTime = QDateTime::currentDateTime();
+    emit statisticsUpdated();
+}
+
+quint64 CANInterface::getMessagesPerSecond() const
+{
+    return m_lastSecondMessages;
+}
+
+void CANInterface::setReadTimeout(int milliseconds)
+{
+    m_readTimeout = milliseconds;
+}
+
+void CANInterface::setWriteTimeout(int milliseconds)
+{
+    m_writeTimeout = milliseconds;
+}
+
+void CANInterface::setMaxBufferSize(int size)
+{
+    m_maxBufferSize = qMax(1024, size); // Минимум 1KB
+}
+
+void CANInterface::updateStatistics()
+{
+    QDateTime now = QDateTime::currentDateTime();
+    if (m_lastSecondTime.isValid()) {
+        qint64 elapsed = m_lastSecondTime.msecsTo(now);
+        if (elapsed >= 1000) {
+            m_lastSecondMessages = 0;
+            m_lastSecondTime = now;
+        }
+    } else {
+        m_lastSecondTime = now;
+    }
+}
+
+bool CANInterface::validateFrame(const QByteArray &frame) const
+{
+    if (frame.size() < 8) return false; // Минимальный размер кадра
+    if (static_cast<quint8>(frame[0]) != FRAME_START) return false;
+    if (static_cast<quint8>(frame[frame.size() - 1]) != FRAME_END) return false;
+    return true;
+}
+
 void CANInterface::onDataReceived()
 {
     QByteArray data = m_serialPort->readAll();
-    m_buffer.append(data);
     
+    // Защита от переполнения буфера
+    if (m_buffer.size() + data.size() > m_maxBufferSize) {
+        emit errorOccurred(QString("Переполнение буфера! Очистка. Размер: %1 байт").arg(m_buffer.size()));
+        m_buffer.clear();
+        m_stats.errorsCount++;
+    }
+    
+    m_buffer.append(data);
     parseReceivedData(m_buffer);
 }
 
@@ -220,8 +358,37 @@ void CANInterface::parseReceivedData(QByteArray &buffer)
             // Извлекаем данные
             QByteArray canData = buffer.mid(7, dataLength);
             
+            // Проверка фильтра
+            if (isMessageFiltered(canId)) {
+                // Сообщение отфильтровано, удаляем из буфера но не обрабатываем
+                buffer.remove(0, endIndex + 1);
+                continue;
+            }
+            
+            // Валидация кадра
+            QByteArray frame = buffer.mid(0, endIndex + 1);
+            if (!validateFrame(frame)) {
+                emit errorOccurred(QString("Получен невалидный кадр для ID 0x%1").arg(canId, 0, 16));
+                m_stats.errorsCount++;
+                buffer.remove(0, 1); // Пропускаем байт
+                continue;
+            }
+            
+            QDateTime timestamp = QDateTime::currentDateTime();
+            
+            // Обновление статистики
+            m_stats.messagesReceived++;
+            m_stats.messagesPerId[canId]++;
+            if (!m_stats.firstMessageTime.isValid()) {
+                m_stats.firstMessageTime = timestamp;
+            }
+            m_stats.lastMessageTime = timestamp;
+            m_lastSecondMessages++;
+            emit statisticsUpdated();
+            
             QString message = formatCanMessage(canId, canData);
             emit messageReceived(message);
+            emit messageReceivedDetailed(canId, canData, timestamp);
             
             // Удаляем обработанный кадр из буфера
             buffer.remove(0, endIndex + 1);

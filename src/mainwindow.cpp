@@ -3,26 +3,50 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QHeaderView>
+#include <QFile>
+#include <QTextStream>
+#include <QKeyEvent>
+#include <QCloseEvent>
+#include <QSettings>
+#include <QTableWidgetItem>
+#include <QAbstractItemView>
+#include <QBrush>
+#include <QColor>
+#include <QShortcut>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_isConnected(false)
+    , m_useTableView(true)
 {
     setupUI();
+    setupShortcuts();
+    loadSettings();
     
     m_canInterface = new CANInterface(this);
     connect(m_canInterface, &CANInterface::messageReceived, 
             this, &MainWindow::onCanMessageReceived);
+    connect(m_canInterface, &CANInterface::messageReceivedDetailed,
+            this, &MainWindow::onCanMessageReceivedDetailed);
     connect(m_canInterface, &CANInterface::connectionStatusChanged, 
             this, &MainWindow::onConnectionStatusChanged);
     connect(m_canInterface, &CANInterface::errorOccurred, 
             this, &MainWindow::onErrorOccurred);
+    connect(m_canInterface, &CANInterface::statisticsUpdated,
+            this, &MainWindow::onStatisticsUpdated);
+    
+    // Автообновление списка портов каждые 5 секунд
+    m_autoRefreshTimer = new QTimer(this);
+    connect(m_autoRefreshTimer, &QTimer::timeout, this, &MainWindow::onAutoRefreshPorts);
+    m_autoRefreshTimer->start(5000);
     
     logMessage("Программа запущена. Выберите порт и скорость, затем нажмите 'Подключиться'");
 }
 
 MainWindow::~MainWindow()
 {
+    saveSettings();
     if (m_isConnected) {
         m_canInterface->disconnect();
     }
@@ -49,10 +73,16 @@ void MainWindow::setupUI()
     
     QLabel *baudLabel = new QLabel("Скорость (кбит/с):", this);
     m_baudRateCombo = new QComboBox(this);
+    m_baudRateCombo->addItem("125", 125);
     m_baudRateCombo->addItem("250", 250);
     m_baudRateCombo->addItem("500", 500);
-    m_baudRateCombo->setCurrentIndex(0);
+    m_baudRateCombo->addItem("1000", 1000);
+    m_baudRateCombo->setCurrentIndex(1); // 250 по умолчанию
     m_baudRateCombo->setMinimumWidth(100);
+    
+    m_refreshPortsButton = new QPushButton("Обновить", this);
+    m_refreshPortsButton->setToolTip("Обновить список портов");
+    connect(m_refreshPortsButton, &QPushButton::clicked, this, &MainWindow::onRefreshPortsClicked);
     
     m_connectButton = new QPushButton("Подключиться", this);
     m_connectButton->setMinimumWidth(120);
@@ -60,6 +90,7 @@ void MainWindow::setupUI()
     
     connectionLayout->addWidget(portLabel);
     connectionLayout->addWidget(m_portCombo);
+    connectionLayout->addWidget(m_refreshPortsButton);
     connectionLayout->addWidget(baudLabel);
     connectionLayout->addWidget(m_baudRateCombo);
     connectionLayout->addWidget(m_connectButton);
@@ -98,22 +129,72 @@ void MainWindow::setupUI()
     sendLayout->addLayout(canDataLayout);
     sendLayout->addWidget(m_sendButton, 0, Qt::AlignRight);
     
-    // Лог
+    // Фильтры
+    QGroupBox *filterGroup = new QGroupBox("Фильтры CAN ID", this);
+    QHBoxLayout *filterLayout = new QHBoxLayout(filterGroup);
+    
+    m_filterEnabledCheck = new QCheckBox("Включить фильтрацию", this);
+    m_filterIdEdit = new QLineEdit(this);
+    m_filterIdEdit->setPlaceholderText("CAN ID (hex)");
+    m_filterIdEdit->setMaximumWidth(100);
+    m_filterIdEdit->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{1,8}"), this));
+    m_addFilterButton = new QPushButton("Добавить", this);
+    m_clearFiltersButton = new QPushButton("Очистить", this);
+    
+    connect(m_filterEnabledCheck, &QCheckBox::toggled, this, &MainWindow::onFilterToggled);
+    connect(m_addFilterButton, &QPushButton::clicked, this, &MainWindow::onAddFilterClicked);
+    connect(m_clearFiltersButton, &QPushButton::clicked, this, &MainWindow::onClearFiltersClicked);
+    
+    filterLayout->addWidget(m_filterEnabledCheck);
+    filterLayout->addWidget(new QLabel("ID:", this));
+    filterLayout->addWidget(m_filterIdEdit);
+    filterLayout->addWidget(m_addFilterButton);
+    filterLayout->addWidget(m_clearFiltersButton);
+    filterLayout->addStretch();
+    
+    // Лог и таблица
     QGroupBox *logGroup = new QGroupBox("Лог сообщений", this);
     QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
     
+    QHBoxLayout *logButtonsLayout = new QHBoxLayout();
+    m_clearLogButton = new QPushButton("Очистить лог", this);
+    m_saveLogButton = new QPushButton("Сохранить лог", this);
+    connect(m_clearLogButton, &QPushButton::clicked, this, &MainWindow::onClearLogClicked);
+    connect(m_saveLogButton, &QPushButton::clicked, this, &MainWindow::onSaveLogClicked);
+    logButtonsLayout->addWidget(m_clearLogButton);
+    logButtonsLayout->addWidget(m_saveLogButton);
+    logButtonsLayout->addStretch();
+    
+    // Таблица сообщений
+    m_messageTable = new QTableWidget(this);
+    m_messageTable->setColumnCount(4);
+    m_messageTable->setHorizontalHeaderLabels(QStringList() << "Время" << "ID" << "Данные" << "Направление");
+    m_messageTable->horizontalHeader()->setStretchLastSection(true);
+    m_messageTable->setAlternatingRowColors(true);
+    m_messageTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_messageTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    
+    // Текстовый лог
     m_logTextEdit = new QTextEdit(this);
     m_logTextEdit->setReadOnly(true);
     m_logTextEdit->setFont(QFont("Courier", 9));
-    logLayout->addWidget(m_logTextEdit);
+    m_logTextEdit->setMaximumHeight(150);
+    m_logTextEdit->hide(); // По умолчанию показываем таблицу
+    
+    logLayout->addLayout(logButtonsLayout);
+    logLayout->addWidget(m_messageTable, 2);
+    logLayout->addWidget(m_logTextEdit, 1);
     
     // Статус
     m_statusLabel = new QLabel("Не подключено", this);
+    m_statsLabel = new QLabel("", this);
     statusBar()->addWidget(m_statusLabel);
+    statusBar()->addPermanentWidget(m_statsLabel);
     
     // Добавление групп в главный layout
     mainLayout->addWidget(connectionGroup);
     mainLayout->addWidget(sendGroup);
+    mainLayout->addWidget(filterGroup);
     mainLayout->addWidget(logGroup);
     
     // Обновление списка портов
@@ -197,8 +278,10 @@ void MainWindow::onSendClicked()
     }
     
     if (m_canInterface->sendMessage(canId, data)) {
-        logMessage(QString("Отправлено: ID=0x%1, Данные=%2")
-                   .arg(canId, 0, 16).arg(canDataStr.toUpper()), "SEND");
+        QString logMsg = QString("Отправлено: ID=0x%1, Данные=%2")
+                         .arg(canId, 0, 16).arg(canDataStr.toUpper());
+        logMessage(logMsg, "SEND");
+        addMessageToTable(canId, data, QDateTime::currentDateTime(), false);
     } else {
         logMessage("Ошибка отправки сообщения", "ERROR");
     }
@@ -207,6 +290,11 @@ void MainWindow::onSendClicked()
 void MainWindow::onCanMessageReceived(const QString &message)
 {
     logMessage(message, "RECV");
+}
+
+void MainWindow::onCanMessageReceivedDetailed(quint32 id, const QByteArray &data, const QDateTime &timestamp)
+{
+    addMessageToTable(id, data, timestamp, true);
 }
 
 void MainWindow::onConnectionStatusChanged(bool connected)
@@ -252,5 +340,216 @@ void MainWindow::logMessage(const QString &message, const QString &type)
     QTextCursor cursor = m_logTextEdit->textCursor();
     cursor.movePosition(QTextCursor::End);
     m_logTextEdit->setTextCursor(cursor);
+}
+
+void MainWindow::onRefreshPortsClicked()
+{
+    m_portCombo->clear();
+    QStringList ports = m_canInterface->getAvailablePorts();
+    m_portCombo->addItems(ports);
+    logMessage(QString("Список портов обновлен. Найдено портов: %1").arg(ports.size()));
+}
+
+void MainWindow::onClearLogClicked()
+{
+    m_logTextEdit->clear();
+    m_messageTable->setRowCount(0);
+    logMessage("Лог очищен");
+}
+
+void MainWindow::onSaveLogClicked()
+{
+    QString fileName = QFileDialog::getSaveFileName(this, "Сохранить лог", 
+                                                    QString("can_log_%1.txt")
+                                                    .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss")),
+                                                    "Текстовые файлы (*.txt);;CSV файлы (*.csv)");
+    if (fileName.isEmpty()) return;
+    
+    QFile file(fileName);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&file);
+        
+        if (fileName.endsWith(".csv")) {
+            // CSV формат
+            out << "Время,ID,Данные,Направление\n";
+            for (int i = 0; i < m_messageTable->rowCount(); ++i) {
+                out << m_messageTable->item(i, 0)->text() << ","
+                    << m_messageTable->item(i, 1)->text() << ","
+                    << m_messageTable->item(i, 2)->text() << ","
+                    << m_messageTable->item(i, 3)->text() << "\n";
+            }
+        } else {
+            // Текстовый формат
+            out << m_logTextEdit->toPlainText();
+        }
+        
+        file.close();
+        logMessage(QString("Лог сохранен в файл: %1").arg(fileName), "SUCCESS");
+    } else {
+        logMessage(QString("Ошибка сохранения файла: %1").arg(file.errorString()), "ERROR");
+    }
+}
+
+void MainWindow::onFilterToggled(bool enabled)
+{
+    m_canInterface->setFilterEnabled(enabled);
+    logMessage(enabled ? "Фильтрация включена" : "Фильтрация выключена");
+}
+
+void MainWindow::onAddFilterClicked()
+{
+    QString idStr = m_filterIdEdit->text();
+    if (idStr.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Введите CAN ID для фильтра!");
+        return;
+    }
+    
+    bool ok;
+    quint32 id = idStr.toUInt(&ok, 16);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный формат CAN ID!");
+        return;
+    }
+    
+    m_canInterface->addFilterId(id, true); // true = разрешить
+    logMessage(QString("Добавлен фильтр для ID: 0x%1 (разрешить)").arg(id, 0, 16));
+    m_filterIdEdit->clear();
+}
+
+void MainWindow::onClearFiltersClicked()
+{
+    m_canInterface->clearFilters();
+    logMessage("Все фильтры очищены");
+}
+
+void MainWindow::onStatisticsUpdated()
+{
+    updateStatisticsDisplay();
+}
+
+void MainWindow::updateStatisticsDisplay()
+{
+    Statistics stats = m_canInterface->getStatistics();
+    quint64 mps = m_canInterface->getMessagesPerSecond();
+    
+    QString statsText = QString("Отправлено: %1 | Принято: %2 | Ошибок: %3 | Скорость: %4 msg/s")
+                        .arg(stats.messagesSent)
+                        .arg(stats.messagesReceived)
+                        .arg(stats.errorsCount)
+                        .arg(mps);
+    m_statsLabel->setText(statsText);
+}
+
+void MainWindow::addMessageToTable(quint32 id, const QByteArray &data, const QDateTime &timestamp, bool isReceived)
+{
+    int row = m_messageTable->rowCount();
+    m_messageTable->insertRow(row);
+    
+    // Время
+    m_messageTable->setItem(row, 0, new QTableWidgetItem(timestamp.toString("hh:mm:ss.zzz")));
+    
+    // ID
+    m_messageTable->setItem(row, 1, new QTableWidgetItem(QString("0x%1").arg(id, 0, 16).toUpper()));
+    
+    // Данные
+    QString dataStr;
+    for (int i = 0; i < data.size(); ++i) {
+        if (i > 0) dataStr += " ";
+        dataStr += QString("%1").arg(static_cast<quint8>(data[i]), 2, 16, QChar('0')).toUpper();
+    }
+    m_messageTable->setItem(row, 2, new QTableWidgetItem(dataStr));
+    
+    // Направление
+    m_messageTable->setItem(row, 3, new QTableWidgetItem(isReceived ? "RX" : "TX"));
+    
+    // Цветовая подсветка
+    if (isReceived) {
+        m_messageTable->item(row, 3)->setForeground(QBrush(QColor("purple")));
+    } else {
+        m_messageTable->item(row, 3)->setForeground(QBrush(QColor("blue")));
+    }
+    
+    // Автопрокрутка к последней строке
+    m_messageTable->scrollToBottom();
+    
+    // Ограничение количества строк (удаляем старые)
+    const int MAX_ROWS = 1000;
+    while (m_messageTable->rowCount() > MAX_ROWS) {
+        m_messageTable->removeRow(0);
+    }
+}
+
+void MainWindow::setupShortcuts()
+{
+    // Enter для отправки
+    QShortcut *sendShortcut = new QShortcut(QKeySequence(Qt::Key_Return), this);
+    connect(sendShortcut, &QShortcut::activated, this, &MainWindow::onSendClicked);
+    
+    // Ctrl+L для очистки лога
+    QShortcut *clearShortcut = new QShortcut(QKeySequence("Ctrl+L"), this);
+    connect(clearShortcut, &QShortcut::activated, this, &MainWindow::onClearLogClicked);
+    
+    // F5 для обновления портов
+    QShortcut *refreshShortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
+    connect(refreshShortcut, &QShortcut::activated, this, &MainWindow::onRefreshPortsClicked);
+}
+
+void MainWindow::saveSettings()
+{
+    QSettings settings;
+    settings.setValue("geometry", saveGeometry());
+    settings.setValue("windowState", saveState());
+    settings.setValue("lastPort", m_portCombo->currentText());
+    settings.setValue("lastBaudRate", m_baudRateCombo->currentIndex());
+}
+
+void MainWindow::loadSettings()
+{
+    QSettings settings;
+    restoreGeometry(settings.value("geometry").toByteArray());
+    restoreState(settings.value("windowState").toByteArray());
+    
+    // Восстановление последних настроек
+    QString lastPort = settings.value("lastPort").toString();
+    int lastBaudIndex = settings.value("lastBaudRate", 1).toInt();
+    
+    if (lastBaudIndex >= 0 && lastBaudIndex < m_baudRateCombo->count()) {
+        m_baudRateCombo->setCurrentIndex(lastBaudIndex);
+    }
+}
+
+void MainWindow::onAutoRefreshPorts()
+{
+    if (!m_isConnected) {
+        // Обновляем список портов только если не подключены
+        QStringList ports = m_canInterface->getAvailablePorts();
+        QString currentPort = m_portCombo->currentText();
+        
+        m_portCombo->clear();
+        m_portCombo->addItems(ports);
+        
+        // Восстанавливаем выбранный порт если он еще существует
+        int index = m_portCombo->findText(currentPort);
+        if (index >= 0) {
+            m_portCombo->setCurrentIndex(index);
+        }
+    }
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_F5) {
+        onRefreshPortsClicked();
+    }
+    QMainWindow::keyPressEvent(event);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveSettings();
+    if (m_isConnected) {
+        m_canInterface->disconnect();
+    }
+    event->accept();
 }
 
