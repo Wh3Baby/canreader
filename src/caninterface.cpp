@@ -16,10 +16,19 @@ CANInterface::~CANInterface()
     disconnect();
 }
 
-bool CANInterface::connect(const QString &portName, int baudRateKbps)
+bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
 {
     if (m_connected) {
         disconnect();
+    }
+    
+    // Извлекаем реальное имя порта из строки с описанием
+    // Формат: "ttyUSB0 (FTDI Serial Converter)" -> "ttyUSB0"
+    // Или: "COM3 - USB Serial Port" -> "COM3"
+    QString portName = portDisplayName;
+    int spaceIndex = portName.indexOf(' ');
+    if (spaceIndex > 0) {
+        portName = portName.left(spaceIndex);
     }
     
     m_serialPort->setPortName(portName);
@@ -106,12 +115,31 @@ QStringList CANInterface::getAvailablePorts() const
     
     for (const QSerialPortInfo &portInfo : portInfos) {
         QString portName = portInfo.portName();
+        QString description = portInfo.description();
+        QString manufacturer = portInfo.manufacturer();
+        
+        // Формируем информативную строку для отображения
+        QString displayName = portName;
         
 #ifdef Q_OS_WIN
-        ports.append(portName);
+        // На Windows: COM1, COM2 и т.д.
+        if (!description.isEmpty()) {
+            displayName += QString(" - %1").arg(description);
+        }
 #else
-        ports.append(portName);
+        // На Linux: /dev/ttyUSB0, /dev/ttyACM0 и т.д.
+        // QSerialPortInfo::portName() уже возвращает имя устройства
+        if (!description.isEmpty() || !manufacturer.isEmpty()) {
+            QString info = description;
+            if (!manufacturer.isEmpty()) {
+                if (!info.isEmpty()) info += " ";
+                info += manufacturer;
+            }
+            displayName += QString(" (%1)").arg(info);
+        }
 #endif
+        
+        ports.append(displayName);
     }
     
     return ports;

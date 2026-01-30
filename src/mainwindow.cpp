@@ -43,7 +43,7 @@ void MainWindow::setupUI()
     QGroupBox *connectionGroup = new QGroupBox("Подключение", this);
     QHBoxLayout *connectionLayout = new QHBoxLayout(connectionGroup);
     
-    QLabel *portLabel = new QLabel("COM порт:", this);
+    QLabel *portLabel = new QLabel("Последовательный порт:", this);
     m_portCombo = new QComboBox(this);
     m_portCombo->setMinimumWidth(150);
     
@@ -127,7 +127,7 @@ void MainWindow::onConnectClicked()
     if (!m_isConnected) {
         QString portName = m_portCombo->currentText();
         if (portName.isEmpty()) {
-            QMessageBox::warning(this, "Ошибка", "Выберите COM порт!");
+            QMessageBox::warning(this, "Ошибка", "Выберите последовательный порт!");
             return;
         }
         

@@ -41,5 +41,16 @@ if(WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         WIN32_EXECUTABLE TRUE
     )
+    
+    # Автоматическое копирование Qt DLL в папку сборки (опционально)
+    # Раскомментируйте, если нужно автоматическое копирование DLL
+    # add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    #     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #         $<TARGET_FILE:Qt6::Core>
+    #         $<TARGET_FILE:Qt6::Gui>
+    #         $<TARGET_FILE:Qt6::Widgets>
+    #         $<TARGET_FILE:Qt6::SerialPort>
+    #         $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    # )
 endif()
 
