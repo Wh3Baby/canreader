@@ -380,6 +380,17 @@ void MainWindow::onCanMessageReceived(const QString &message)
 
 void MainWindow::onCanMessageReceivedDetailed(quint32 id, const QByteArray &data, const QDateTime &timestamp)
 {
+    // Форматируем сообщение для лога
+    QString dataStr;
+    for (int i = 0; i < data.size(); ++i) {
+        if (i > 0) dataStr += " ";
+        dataStr += QString("%1").arg(static_cast<quint8>(data[i]), 2, 16, QChar('0')).toUpper();
+    }
+    QString logMsg = QString("Принято: ID=0x%1, Данные=%2")
+                     .arg(id, 0, 16).arg(dataStr);
+    logMessage(logMsg, "RECV");
+    
+    // Добавляем в таблицу
     addMessageToTable(id, data, timestamp, true);
 }
 
