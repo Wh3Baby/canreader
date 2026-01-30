@@ -139,8 +139,8 @@ exec /usr/bin/cmake "$@"
 CMAKE_EOF
     chmod +x usr/x86_64-pc-linux-gnu/qt6/libexec/qt-cmake-private
     
-    # Очищаем временные файлы сборки Qt6 для хост-системы
-    rm -rf tmp-qt6-qtbase-x86_64-pc-linux-gnu log/qt6-qtbase_x86_64-pc-linux-gnu 2>/dev/null
+    # Очищаем все временные файлы сборки Qt6 для хост-системы
+    rm -rf tmp-qt6-*x86_64-pc-linux-gnu* log/qt6-*x86_64-pc-linux-gnu* 2>/dev/null
     
     echo "Сборка Qt6 для Windows (статическая версия)..."
     echo "Используется системный cmake, сборка только для Windows target"
