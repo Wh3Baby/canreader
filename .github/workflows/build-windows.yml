@@ -19,10 +19,9 @@ jobs:
     - name: Install Qt6
       uses: jurplel/install-qt-action@v3
       with:
-        version: '6.5.3'
+        version: '6.5.0'
         modules: 'qtbase qtserialport'
         arch: 'win64_msvc2019_64'
-        cache: 'true'
     
     - name: Configure CMake
       run: |
