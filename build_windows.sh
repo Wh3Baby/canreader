@@ -116,16 +116,28 @@ build_qt6() {
     # Фейковые метки установки для инструментов хост-системы
     touch usr/x86_64-pc-linux-gnu/installed/cmake
     touch usr/x86_64-pc-linux-gnu/installed/ninja
-    touch usr/x86_64-pc-linux-gnu/installed/qt6-qtbase
-    touch usr/x86_64-pc-linux-gnu/installed/qt6-qtserialport
+    
+    # Фейковые метки для всех Qt6 модулей для хост-системы
+    for pkg in qt6-qtbase qt6-qtserialport qt6-qtshadertools qt6-qtscxml qt6-qttools qt6-qtdeclarative qt6-qtwebsockets qt6-qtsvg qt6-qtimageformats qt6-qt5compat; do
+        touch usr/x86_64-pc-linux-gnu/installed/$pkg 2>/dev/null
+    done
     
     # Создаем фейковую структуру Qt6 для хост-системы
     mkdir -p usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6
+    mkdir -p usr/x86_64-pc-linux-gnu/qt6/libexec
     cat > usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6Config.cmake << 'QT6_EOF'
 # Fake Qt6Config.cmake for host system
 set(Qt6_FOUND TRUE)
 set(Qt6_VERSION "6.10.2")
 QT6_EOF
+    
+    # Создаем фейковый qt-cmake-private
+    cat > usr/x86_64-pc-linux-gnu/qt6/libexec/qt-cmake-private << 'CMAKE_EOF'
+#!/bin/bash
+# Fake qt-cmake-private that uses system cmake
+exec /usr/bin/cmake "$@"
+CMAKE_EOF
+    chmod +x usr/x86_64-pc-linux-gnu/qt6/libexec/qt-cmake-private
     
     # Очищаем временные файлы сборки Qt6 для хост-системы
     rm -rf tmp-qt6-qtbase-x86_64-pc-linux-gnu log/qt6-qtbase_x86_64-pc-linux-gnu 2>/dev/null
