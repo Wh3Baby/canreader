@@ -121,7 +121,11 @@ build_qt6() {
     
     # Создаем фейковую структуру Qt6 для хост-системы
     mkdir -p usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6
-    touch usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6Config.cmake
+    cat > usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6Config.cmake << 'QT6_EOF'
+# Fake Qt6Config.cmake for host system
+set(Qt6_FOUND TRUE)
+set(Qt6_VERSION "6.10.2")
+QT6_EOF
     
     # Очищаем временные файлы сборки Qt6 для хост-системы
     rm -rf tmp-qt6-qtbase-x86_64-pc-linux-gnu log/qt6-qtbase_x86_64-pc-linux-gnu 2>/dev/null
