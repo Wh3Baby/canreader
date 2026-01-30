@@ -4,6 +4,11 @@ on:
   push:
     branches: [ main ]
 
+# Автоматическая очистка старых runs (оставляем только последние 5)
+concurrency:
+  group: build-windows
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
