@@ -14,6 +14,12 @@
 #include <QBrush>
 #include <QColor>
 #include <QShortcut>
+#include <QPushButton>
+#include <QTabWidget>
+#include <QTextBrowser>
+#include <QEventLoop>
+#include "udsprotocol.h"
+#include "obd2protocol.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -35,6 +41,18 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onErrorOccurred);
     connect(m_canInterface, &CANInterface::statisticsUpdated,
             this, &MainWindow::onStatisticsUpdated);
+    
+    // Инициализация диагностических протоколов
+    m_udsProtocol = new UDSProtocol(m_canInterface, this);
+    m_obd2Protocol = new OBD2Protocol(m_canInterface, this);
+    connect(m_udsProtocol, &UDSProtocol::responseReceived, 
+            this, &MainWindow::onDiagnosticResponseReceived);
+    connect(m_udsProtocol, &UDSProtocol::errorOccurred, 
+            this, &MainWindow::onDiagnosticError);
+    connect(m_obd2Protocol, &OBD2Protocol::responseReceived, 
+            this, &MainWindow::onDiagnosticResponseReceived);
+    connect(m_obd2Protocol, &OBD2Protocol::errorOccurred, 
+            this, &MainWindow::onDiagnosticError);
     
     // Автообновление списка портов каждые 5 секунд
     m_autoRefreshTimer = new QTimer(this);
@@ -195,6 +213,11 @@ void MainWindow::setupUI()
     mainLayout->addWidget(connectionGroup);
     mainLayout->addWidget(sendGroup);
     mainLayout->addWidget(filterGroup);
+    
+    // Диагностика
+    setupDiagnosticUI();
+    mainLayout->addWidget(m_diagnosticTabs);
+    
     mainLayout->addWidget(logGroup);
     
     // Обновление списка портов
@@ -551,5 +574,435 @@ void MainWindow::closeEvent(QCloseEvent *event)
         m_canInterface->disconnect();
     }
     event->accept();
+}
+
+void MainWindow::setupDiagnosticUI()
+{
+    m_diagnosticTabs = new QTabWidget(this);
+    
+    // UDS вкладка
+    m_udsGroup = new QGroupBox("UDS (ISO 14229)", this);
+    QVBoxLayout *udsLayout = new QVBoxLayout(m_udsGroup);
+    
+    // Чтение DID
+    QHBoxLayout *readDIDLayout = new QHBoxLayout();
+    readDIDLayout->addWidget(new QLabel("DID (hex):", this));
+    m_udsDIDEdit = new QLineEdit(this);
+    m_udsDIDEdit->setPlaceholderText("F190");
+    m_udsDIDEdit->setMaximumWidth(100);
+    QPushButton *readDIDBtn = new QPushButton("Читать DID", this);
+    connect(readDIDBtn, &QPushButton::clicked, this, &MainWindow::onUDSReadDID);
+    readDIDLayout->addWidget(m_udsDIDEdit);
+    readDIDLayout->addWidget(readDIDBtn);
+    readDIDLayout->addStretch();
+    
+    // Запись DID
+    QHBoxLayout *writeDIDLayout = new QHBoxLayout();
+    writeDIDLayout->addWidget(new QLabel("Данные (hex):", this));
+    m_udsDataEdit = new QLineEdit(this);
+    m_udsDataEdit->setPlaceholderText("01 02 03");
+    QPushButton *writeDIDBtn = new QPushButton("Записать DID", this);
+    connect(writeDIDBtn, &QPushButton::clicked, this, &MainWindow::onUDSWriteDID);
+    writeDIDLayout->addWidget(m_udsDataEdit);
+    writeDIDLayout->addWidget(writeDIDBtn);
+    writeDIDLayout->addStretch();
+    
+    // Чтение памяти
+    QHBoxLayout *readMemLayout = new QHBoxLayout();
+    readMemLayout->addWidget(new QLabel("Адрес:", this));
+    m_udsAddressEdit = new QLineEdit(this);
+    m_udsAddressEdit->setPlaceholderText("0x12345678");
+    m_udsAddressEdit->setMaximumWidth(150);
+    readMemLayout->addWidget(m_udsAddressEdit);
+    readMemLayout->addWidget(new QLabel("Длина:", this));
+    m_udsLengthEdit = new QLineEdit(this);
+    m_udsLengthEdit->setPlaceholderText("16");
+    m_udsLengthEdit->setMaximumWidth(80);
+    QPushButton *readMemBtn = new QPushButton("Читать память", this);
+    connect(readMemBtn, &QPushButton::clicked, this, &MainWindow::onUDSReadMemory);
+    readMemLayout->addWidget(m_udsLengthEdit);
+    readMemLayout->addWidget(readMemBtn);
+    readMemLayout->addStretch();
+    
+    // Безопасный доступ
+    QHBoxLayout *securityLayout = new QHBoxLayout();
+    securityLayout->addWidget(new QLabel("Уровень:", this));
+    m_udsSecurityLevelEdit = new QLineEdit(this);
+    m_udsSecurityLevelEdit->setPlaceholderText("1");
+    m_udsSecurityLevelEdit->setMaximumWidth(80);
+    QPushButton *securityBtn = new QPushButton("Безопасный доступ", this);
+    connect(securityBtn, &QPushButton::clicked, this, &MainWindow::onUDSSecurityAccess);
+    securityLayout->addWidget(m_udsSecurityLevelEdit);
+    securityLayout->addWidget(securityBtn);
+    securityLayout->addStretch();
+    
+    // Сессия
+    QHBoxLayout *sessionLayout = new QHBoxLayout();
+    sessionLayout->addWidget(new QLabel("Сессия:", this));
+    m_udsSessionEdit = new QLineEdit(this);
+    m_udsSessionEdit->setPlaceholderText("1=Default, 2=Programming, 3=Extended");
+    QPushButton *sessionBtn = new QPushButton("Начать сессию", this);
+    connect(sessionBtn, &QPushButton::clicked, this, &MainWindow::onUDSStartSession);
+    sessionLayout->addWidget(m_udsSessionEdit);
+    sessionLayout->addWidget(sessionBtn);
+    sessionLayout->addStretch();
+    
+    // DTC
+    QHBoxLayout *dtcLayout = new QHBoxLayout();
+    QPushButton *readDTCBtn = new QPushButton("Читать DTC", this);
+    QPushButton *clearDTCBtn = new QPushButton("Очистить DTC", this);
+    connect(readDTCBtn, &QPushButton::clicked, this, &MainWindow::onUDSReadDTC);
+    connect(clearDTCBtn, &QPushButton::clicked, this, &MainWindow::onUDSClearDTC);
+    dtcLayout->addWidget(readDTCBtn);
+    dtcLayout->addWidget(clearDTCBtn);
+    dtcLayout->addStretch();
+    
+    udsLayout->addLayout(readDIDLayout);
+    udsLayout->addLayout(writeDIDLayout);
+    udsLayout->addLayout(readMemLayout);
+    udsLayout->addLayout(securityLayout);
+    udsLayout->addLayout(sessionLayout);
+    udsLayout->addLayout(dtcLayout);
+    
+    // OBD-II вкладка
+    m_obd2Group = new QGroupBox("OBD-II (SAE J1979)", this);
+    QVBoxLayout *obd2Layout = new QVBoxLayout(m_obd2Group);
+    
+    // Режим и PID
+    QHBoxLayout *pidLayout = new QHBoxLayout();
+    pidLayout->addWidget(new QLabel("Режим:", this));
+    m_obd2ModeCombo = new QComboBox(this);
+    m_obd2ModeCombo->addItem("01 - Текущие данные", 0x01);
+    m_obd2ModeCombo->addItem("03 - Сохраненные DTC", 0x03);
+    m_obd2ModeCombo->addItem("04 - Очистить DTC", 0x04);
+    m_obd2ModeCombo->addItem("07 - Ожидающие DTC", 0x07);
+    m_obd2ModeCombo->addItem("09 - Информация", 0x09);
+    pidLayout->addWidget(m_obd2ModeCombo);
+    pidLayout->addWidget(new QLabel("PID (hex):", this));
+    m_obd2PIDEdit = new QLineEdit(this);
+    m_obd2PIDEdit->setPlaceholderText("0C (RPM), 0D (Speed)");
+    m_obd2PIDEdit->setMaximumWidth(150);
+    QPushButton *readPIDBtn = new QPushButton("Читать PID", this);
+    connect(readPIDBtn, &QPushButton::clicked, this, &MainWindow::onOBD2ReadPID);
+    pidLayout->addWidget(m_obd2PIDEdit);
+    pidLayout->addWidget(readPIDBtn);
+    pidLayout->addStretch();
+    
+    // Быстрые команды
+    QHBoxLayout *quickLayout = new QHBoxLayout();
+    QPushButton *readDTCBtn2 = new QPushButton("Читать DTC", this);
+    QPushButton *clearDTCBtn2 = new QPushButton("Очистить DTC", this);
+    QPushButton *readVINBtn = new QPushButton("Читать VIN", this);
+    connect(readDTCBtn2, &QPushButton::clicked, this, &MainWindow::onOBD2ReadDTC);
+    connect(clearDTCBtn2, &QPushButton::clicked, this, &MainWindow::onOBD2ClearDTC);
+    connect(readVINBtn, &QPushButton::clicked, this, &MainWindow::onOBD2ReadVIN);
+    quickLayout->addWidget(readDTCBtn2);
+    quickLayout->addWidget(clearDTCBtn2);
+    quickLayout->addWidget(readVINBtn);
+    quickLayout->addStretch();
+    
+    obd2Layout->addLayout(pidLayout);
+    obd2Layout->addLayout(quickLayout);
+    
+    // Вывод диагностики
+    m_diagnosticOutput = new QTextBrowser(this);
+    m_diagnosticOutput->setMaximumHeight(150);
+    m_diagnosticOutput->setFont(QFont("Courier", 9));
+    
+    udsLayout->addWidget(m_diagnosticOutput);
+    obd2Layout->addWidget(m_diagnosticOutput);
+    
+    m_diagnosticTabs->addTab(m_udsGroup, "UDS");
+    m_diagnosticTabs->addTab(m_obd2Group, "OBD-II");
+}
+
+void MainWindow::onUDSReadDID()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    bool ok;
+    quint16 did = m_udsDIDEdit->text().toUShort(&ok, 16);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный формат DID!");
+        return;
+    }
+    
+    QByteArray response;
+    if (m_udsProtocol->readDataByIdentifier(did, response)) {
+        QString hex = response.toHex(' ').toUpper();
+        m_diagnosticOutput->append(QString("UDS: Чтение DID 0x%1: %2")
+                                   .arg(did, 4, 16, QChar('0')).arg(hex));
+    } else {
+        m_diagnosticOutput->append(QString("UDS: Ошибка чтения DID 0x%1").arg(did, 4, 16, QChar('0')));
+    }
+}
+
+void MainWindow::onUDSWriteDID()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    bool ok;
+    quint16 did = m_udsDIDEdit->text().toUShort(&ok, 16);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный формат DID!");
+        return;
+    }
+    
+    QByteArray data;
+    QStringList bytes = m_udsDataEdit->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    for (const QString &byte : bytes) {
+        quint8 value = byte.toUInt(&ok, 16);
+        if (ok) {
+            data.append(value);
+        }
+    }
+    
+    if (m_udsProtocol->writeDataByIdentifier(did, data)) {
+        m_diagnosticOutput->append(QString("UDS: Запись DID 0x%1 успешна").arg(did, 4, 16, QChar('0')));
+    } else {
+        m_diagnosticOutput->append(QString("UDS: Ошибка записи DID 0x%1").arg(did, 4, 16, QChar('0')));
+    }
+}
+
+void MainWindow::onUDSReadMemory()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    bool ok;
+    quint32 address = m_udsAddressEdit->text().toUInt(&ok, 16);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный формат адреса!");
+        return;
+    }
+    
+    quint32 length = m_udsLengthEdit->text().toUInt(&ok, 10);
+    if (!ok || length == 0) {
+        QMessageBox::warning(this, "Ошибка", "Неверная длина!");
+        return;
+    }
+    
+    QByteArray data;
+    if (m_udsProtocol->readMemoryByAddress(address, length, data)) {
+        QString hex = data.toHex(' ').toUpper();
+        m_diagnosticOutput->append(QString("UDS: Память 0x%1 (%2 байт): %3")
+                                   .arg(address, 8, 16, QChar('0')).arg(length).arg(hex));
+    } else {
+        m_diagnosticOutput->append(QString("UDS: Ошибка чтения памяти"));
+    }
+}
+
+void MainWindow::onUDSWriteMemory()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    bool ok;
+    quint32 address = m_udsAddressEdit->text().toUInt(&ok, 16);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный формат адреса!");
+        return;
+    }
+    
+    QByteArray data;
+    QStringList bytes = m_udsDataEdit->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    for (const QString &byte : bytes) {
+        quint8 value = byte.toUInt(&ok, 16);
+        if (ok) {
+            data.append(value);
+        }
+    }
+    
+    if (data.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Введите данные для записи!");
+        return;
+    }
+    
+    if (m_udsProtocol->writeMemoryByAddress(address, data)) {
+        m_diagnosticOutput->append(QString("UDS: Запись в память 0x%1 успешна").arg(address, 8, 16, QChar('0')));
+    } else {
+        m_diagnosticOutput->append(QString("UDS: Ошибка записи в память"));
+    }
+}
+
+void MainWindow::onUDSSecurityAccess()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    bool ok;
+    quint8 level = m_udsSecurityLevelEdit->text().toUInt(&ok, 10);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный уровень!");
+        return;
+    }
+    
+    QByteArray seed;
+    if (m_udsProtocol->requestSeed(level, seed)) {
+        QByteArray key = UDSProtocol::calculateKey(seed);
+        if (m_udsProtocol->sendKey(level, key)) {
+            m_diagnosticOutput->append(QString("UDS: Безопасный доступ уровень %1 получен").arg(level));
+        } else {
+            m_diagnosticOutput->append(QString("UDS: Ошибка отправки ключа"));
+        }
+    } else {
+        m_diagnosticOutput->append(QString("UDS: Ошибка запроса seed"));
+    }
+}
+
+void MainWindow::onUDSStartSession()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    bool ok;
+    quint8 session = m_udsSessionEdit->text().toUInt(&ok, 10);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный номер сессии!");
+        return;
+    }
+    
+    if (m_udsProtocol->startSession(session)) {
+        m_diagnosticOutput->append(QString("UDS: Сессия %1 начата").arg(session));
+    } else {
+        m_diagnosticOutput->append(QString("UDS: Ошибка начала сессии"));
+    }
+}
+
+void MainWindow::onUDSClearDTC()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    if (m_udsProtocol->clearDTC()) {
+        m_diagnosticOutput->append("UDS: DTC очищены");
+    } else {
+        m_diagnosticOutput->append("UDS: Ошибка очистки DTC");
+    }
+}
+
+void MainWindow::onUDSReadDTC()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    QList<DTCCode> dtcList;
+    if (m_udsProtocol->readDTCByStatus(0xFF, dtcList)) {
+        m_diagnosticOutput->append(QString("UDS: Найдено %1 DTC:").arg(dtcList.size()));
+        for (const DTCCode &dtc : dtcList) {
+            m_diagnosticOutput->append(QString("  %1 - %2 (%3)")
+                                      .arg(UDSProtocol::formatDTC(dtc.code))
+                                      .arg(dtc.description)
+                                      .arg(dtc.isActive ? "Активен" : "Неактивен"));
+        }
+    } else {
+        m_diagnosticOutput->append("UDS: Ошибка чтения DTC");
+    }
+}
+
+void MainWindow::onOBD2ReadPID()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    quint8 mode = m_obd2ModeCombo->currentData().toUInt();
+    bool ok;
+    quint8 pid = m_obd2PIDEdit->text().toUInt(&ok, 16);
+    if (!ok) {
+        QMessageBox::warning(this, "Ошибка", "Неверный формат PID!");
+        return;
+    }
+    
+    OBD2Value value;
+    if (m_obd2Protocol->readPID(mode, pid, value)) {
+        m_diagnosticOutput->append(QString("OBD-II: %1 = %2")
+                                  .arg(value.name).arg(value.value));
+    } else {
+        m_diagnosticOutput->append(QString("OBD-II: Ошибка чтения PID 0x%1").arg(pid, 2, 16, QChar('0')));
+    }
+}
+
+void MainWindow::onOBD2ReadDTC()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    QList<QString> dtcList;
+    if (m_obd2Protocol->readStoredDTC(dtcList)) {
+        m_diagnosticOutput->append(QString("OBD-II: Найдено %1 DTC:").arg(dtcList.size()));
+        for (const QString &dtc : dtcList) {
+            m_diagnosticOutput->append(QString("  %1").arg(dtc));
+        }
+    } else {
+        m_diagnosticOutput->append("OBD-II: Ошибка чтения DTC");
+    }
+}
+
+void MainWindow::onOBD2ClearDTC()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    if (m_obd2Protocol->clearDTC()) {
+        m_diagnosticOutput->append("OBD-II: DTC очищены");
+    } else {
+        m_diagnosticOutput->append("OBD-II: Ошибка очистки DTC");
+    }
+}
+
+void MainWindow::onOBD2ReadVIN()
+{
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    QString vin;
+    if (m_obd2Protocol->readVIN(vin)) {
+        m_diagnosticOutput->append(QString("OBD-II: VIN = %1").arg(vin));
+    } else {
+        m_diagnosticOutput->append("OBD-II: Ошибка чтения VIN");
+    }
+}
+
+void MainWindow::onDiagnosticResponseReceived(const QByteArray &response)
+{
+    QString hex = response.toHex(' ').toUpper();
+    m_diagnosticOutput->append(QString("Ответ: %1").arg(hex));
+}
+
+void MainWindow::onDiagnosticError(const QString &error)
+{
+    m_diagnosticOutput->append(QString("Ошибка: %1").arg(error));
+}
+
+void MainWindow::onOBD2ReadMultiplePIDs()
+{
+    // TODO: Реализовать чтение нескольких PID
+    QMessageBox::information(this, "Info", "Функция в разработке");
 }
 

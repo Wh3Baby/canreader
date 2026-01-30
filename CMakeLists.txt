@@ -16,11 +16,17 @@ set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/caninterface.cpp
+    src/diagnosticprotocol.cpp
+    src/udsprotocol.cpp
+    src/obd2protocol.cpp
 )
 
 set(HEADERS
     include/mainwindow.h
     include/caninterface.h
+    include/diagnosticprotocol.h
+    include/udsprotocol.h
+    include/obd2protocol.h
 )
 
 # Включаемые директории

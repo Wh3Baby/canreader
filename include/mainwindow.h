@@ -18,7 +18,12 @@
 #include <QKeySequence>
 #include <QShortcut>
 #include <QTimer>
+#include <QTabWidget>
+#include <QTextBrowser>
 #include "caninterface.h"
+
+class UDSProtocol;
+class OBD2Protocol;
 
 class MainWindow : public QMainWindow
 {
@@ -47,6 +52,23 @@ private slots:
     void onAddFilterClicked();
     void onClearFiltersClicked();
     void onAutoRefreshPorts();
+    
+    // Диагностика
+    void onUDSReadDID();
+    void onUDSWriteDID();
+    void onUDSReadMemory();
+    void onUDSWriteMemory();
+    void onUDSSecurityAccess();
+    void onUDSClearDTC();
+    void onUDSReadDTC();
+    void onUDSStartSession();
+    void onOBD2ReadPID();
+    void onOBD2ReadMultiplePIDs();
+    void onOBD2ReadDTC();
+    void onOBD2ClearDTC();
+    void onOBD2ReadVIN();
+    void onDiagnosticResponseReceived(const QByteArray &response);
+    void onDiagnosticError(const QString &error);
 
 private:
     void setupUI();
@@ -81,11 +103,31 @@ private:
     // CAN интерфейс
     CANInterface *m_canInterface;
     
+    // Диагностические протоколы
+    UDSProtocol *m_udsProtocol;
+    OBD2Protocol *m_obd2Protocol;
+    
+    // UI для диагностики
+    QTabWidget *m_diagnosticTabs;
+    QGroupBox *m_udsGroup;
+    QGroupBox *m_obd2Group;
+    QLineEdit *m_udsDIDEdit;
+    QLineEdit *m_udsDataEdit;
+    QLineEdit *m_udsAddressEdit;
+    QLineEdit *m_udsLengthEdit;
+    QLineEdit *m_udsSecurityLevelEdit;
+    QLineEdit *m_udsSessionEdit;
+    QComboBox *m_obd2ModeCombo;
+    QLineEdit *m_obd2PIDEdit;
+    QTextBrowser *m_diagnosticOutput;
+    
     // Таймеры
     QTimer *m_autoRefreshTimer;
     
     bool m_isConnected;
     bool m_useTableView;
+    
+    void setupDiagnosticUI();
 };
 
 #endif // MAINWINDOW_H
