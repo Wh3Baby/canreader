@@ -162,6 +162,36 @@ set(PACKAGE_VERSION_EXACT TRUE)
 set(PACKAGE_VERSION_COMPATIBLE TRUE)
 QT6VER_EOF
     
+    # Создаем базовый Qt6/Qt6Config.cmake с необходимыми функциями
+    mkdir -p usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6
+    cat > usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6/Qt6Config.cmake << 'QT6BASE_EOF'
+# Fake Qt6 base config with required functions
+function(qt_internal_project_setup)
+    # Fake function to prevent CMake errors
+endfunction()
+
+function(qt_find_package)
+    # Fake function
+endfunction()
+
+function(qt_add_executable)
+    # Fake function
+endfunction()
+
+function(qt_add_library)
+    # Fake function
+endfunction()
+QT6BASE_EOF
+    
+    # Создаем конфиги для основных модулей
+    for module in Svg SerialPort Core Gui Widgets Network; do
+        mkdir -p usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6${module}
+        cat > usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6${module}/Qt6${module}Config.cmake << EOF
+# Fake Qt6${module}Config.cmake
+set(Qt6${module}_FOUND TRUE)
+EOF
+    done
+    
     # Создаем фейковый qt-cmake-private
     cat > usr/x86_64-pc-linux-gnu/qt6/libexec/qt-cmake-private << 'CMAKE_EOF'
 #!/bin/bash
