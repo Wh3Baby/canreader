@@ -16,20 +16,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v1
-    
     - name: Install Qt6
-      uses: jurplel/install-qt-action@v3
+      uses: qt-actions/setup-qt@v3
       with:
         version: '6.5.0'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2022_64'
         modules: 'qtbase qtserialport'
-        arch: 'win64_msvc2019_64'
-        dir: '${{ runner.temp }}/Qt'
     
     - name: Configure CMake
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ runner.temp }}/Qt/6.5.0/msvc2019_64"
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${{ env.Qt6_DIR }}
     
     - name: Build
       run: |
