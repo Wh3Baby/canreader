@@ -117,6 +117,11 @@ build_qt6() {
     touch usr/x86_64-pc-linux-gnu/installed/cmake
     touch usr/x86_64-pc-linux-gnu/installed/ninja
     
+    # Фейковые метки для системных библиотек хост-системы
+    for pkg in glib libffi zlib libiconv icu4c gmp mpfr mpc isl pkgconf autotools meson meson-wrapper; do
+        touch usr/x86_64-pc-linux-gnu/installed/$pkg 2>/dev/null
+    done
+    
     # Фейковые метки для всех Qt6 модулей для хост-системы
     # Создаем метки для всех найденных Qt6 пакетов в MXE
     if [ -d src ]; then
