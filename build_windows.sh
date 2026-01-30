@@ -99,14 +99,22 @@ build_qt6() {
     
     # Создаем settings.mk для указания только Windows target
     # Это пропустит сборку cmake для хост-системы
-    if [ ! -f settings.mk ] || ! grep -q "MXE_TARGETS.*x86_64-w64-mingw32.static" settings.mk 2>/dev/null; then
-        echo "MXE_TARGETS := x86_64-w64-mingw32.static" > settings.mk
-        echo "✓ Настроен MXE для сборки только Windows target"
-    fi
+    echo "MXE_TARGETS := x86_64-w64-mingw32.static" > settings.mk
+    echo "✓ Настроен MXE для сборки только Windows target"
+    
+    # Удаляем частичную сборку для хост-системы если она есть
+    rm -rf usr/x86_64-pc-linux-gnu log/cmake_x86_64-pc-linux-gnu 2>/dev/null
+    
+    # Создаем фейковую установку cmake для хост-системы, чтобы MXE думал что он уже собран
+    mkdir -p usr/x86_64-pc-linux-gnu/installed
+    touch usr/x86_64-pc-linux-gnu/installed/cmake
     
     echo "Сборка Qt6 для Windows (статическая версия)..."
     echo "Используется системный cmake, сборка только для Windows target"
-    make qt6 -j$(nproc)
+    echo ""
+    
+    # Явно указываем target при сборке
+    make MXE_TARGETS=x86_64-w64-mingw32.static qt6 -j$(nproc)
     
     cd - > /dev/null
     
