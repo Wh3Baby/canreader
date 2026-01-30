@@ -144,7 +144,23 @@ build_qt6() {
 # Fake Qt6Config.cmake for host system
 set(Qt6_FOUND TRUE)
 set(Qt6_VERSION "6.10.2")
+set(Qt6_VERSION_MAJOR 6)
+set(Qt6_VERSION_MINOR 10)
+set(Qt6_VERSION_PATCH 2)
+# Disable version check to prevent errors
+set(QT_NO_PACKAGE_VERSION_CHECK TRUE)
 QT6_EOF
+    
+    # Создаем Qt6ConfigVersion.cmake для совместимости
+    cat > usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6ConfigVersion.cmake << 'QT6VER_EOF'
+# Fake Qt6ConfigVersion.cmake
+set(PACKAGE_VERSION "6.10.2")
+set(PACKAGE_VERSION_MAJOR 6)
+set(PACKAGE_VERSION_MINOR 10)
+set(PACKAGE_VERSION_PATCH 2)
+set(PACKAGE_VERSION_EXACT TRUE)
+set(PACKAGE_VERSION_COMPATIBLE TRUE)
+QT6VER_EOF
     
     # Создаем фейковый qt-cmake-private
     cat > usr/x86_64-pc-linux-gnu/qt6/libexec/qt-cmake-private << 'CMAKE_EOF'
