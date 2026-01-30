@@ -76,28 +76,34 @@ void MainWindow::setupUI()
     setMinimumSize(1000, 700);
     resize(1200, 800);
     
-    // Применение стилей
+    // Применение мягкой цветовой палитры
     setStyleSheet(
-        "QMainWindow { background-color: #f5f5f5; }"
-        "QGroupBox { font-weight: bold; border: 2px solid #cccccc; border-radius: 5px; margin-top: 10px; padding-top: 10px; background-color: white; }"
-        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
-        "QPushButton { background-color: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; min-width: 100px; }"
-        "QPushButton:hover { background-color: #45a049; }"
-        "QPushButton:pressed { background-color: #3d8b40; }"
-        "QPushButton:disabled { background-color: #cccccc; color: #666666; }"
-        "QLineEdit, QComboBox { border: 2px solid #ddd; border-radius: 4px; padding: 5px; background-color: white; }"
-        "QLineEdit:focus, QComboBox:focus { border: 2px solid #4CAF50; }"
-        "QTableWidget { border: 1px solid #ddd; border-radius: 4px; background-color: white; gridline-color: #e0e0e0; }"
-        "QTableWidget::item { padding: 5px; }"
-        "QTableWidget::item:selected { background-color: #4CAF50; color: white; }"
-        "QHeaderView::section { background-color: #4CAF50; color: white; padding: 8px; border: none; font-weight: bold; }"
-        "QTabWidget::pane { border: 1px solid #ddd; border-radius: 4px; background-color: white; }"
-        "QTabBar::tab { background-color: #e0e0e0; color: #333; padding: 10px 20px; border-top-left-radius: 4px; border-top-right-radius: 4px; }"
-        "QTabBar::tab:selected { background-color: #4CAF50; color: white; }"
-        "QTabBar::tab:hover { background-color: #d0d0d0; }"
-        "QTextBrowser { border: 1px solid #ddd; border-radius: 4px; background-color: #fafafa; font-family: 'Courier New', monospace; }"
-        "QStatusBar { background-color: #e0e0e0; border-top: 1px solid #ccc; }"
-        "QLabel { color: #333; }"
+        "QMainWindow { background-color: #F8F9FA; }"
+        "QGroupBox { font-weight: 500; border: 1px solid #E1E4E8; border-radius: 6px; margin-top: 12px; padding-top: 12px; background-color: #FFFFFF; color: #24292E; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #586069; }"
+        "QPushButton { background-color: #6C8EBF; color: #FFFFFF; border: none; padding: 8px 18px; border-radius: 5px; font-weight: 500; min-width: 100px; }"
+        "QPushButton:hover { background-color: #5B7FAF; }"
+        "QPushButton:pressed { background-color: #4A6F9F; }"
+        "QPushButton:disabled { background-color: #D1D5DB; color: #9CA3AF; }"
+        "QLineEdit, QComboBox { border: 1px solid #D1D5DB; border-radius: 5px; padding: 6px 10px; background-color: #FFFFFF; color: #24292E; selection-background-color: #E3F2FD; }"
+        "QLineEdit:focus, QComboBox:focus { border: 1px solid #6C8EBF; background-color: #FAFBFC; }"
+        "QComboBox::drop-down { border: none; }"
+        "QComboBox QAbstractItemView { border: 1px solid #D1D5DB; border-radius: 4px; background-color: #FFFFFF; selection-background-color: #E3F2FD; }"
+        "QTableWidget { border: 1px solid #E1E4E8; border-radius: 5px; background-color: #FFFFFF; gridline-color: #F1F3F5; alternate-background-color: #F8F9FA; }"
+        "QTableWidget::item { padding: 6px; color: #24292E; }"
+        "QTableWidget::item:selected { background-color: #E3F2FD; color: #1A73E8; }"
+        "QHeaderView::section { background-color: #F6F8FA; color: #586069; padding: 10px; border: none; border-bottom: 1px solid #E1E4E8; font-weight: 600; }"
+        "QTabWidget::pane { border: 1px solid #E1E4E8; border-radius: 6px; background-color: #FFFFFF; top: -1px; }"
+        "QTabBar::tab { background-color: #F6F8FA; color: #586069; padding: 10px 24px; border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 2px; font-weight: 500; }"
+        "QTabBar::tab:selected { background-color: #FFFFFF; color: #24292E; border-bottom: 2px solid #6C8EBF; }"
+        "QTabBar::tab:hover { background-color: #FAFBFC; color: #24292E; }"
+        "QTextBrowser { border: 1px solid #E1E4E8; border-radius: 5px; background-color: #FAFBFC; font-family: 'Courier New', monospace; color: #24292E; }"
+        "QStatusBar { background-color: #F6F8FA; border-top: 1px solid #E1E4E8; color: #586069; }"
+        "QLabel { color: #24292E; }"
+        "QCheckBox { color: #24292E; spacing: 6px; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #D1D5DB; border-radius: 3px; background-color: #FFFFFF; }"
+        "QCheckBox::indicator:checked { background-color: #6C8EBF; border-color: #6C8EBF; }"
+        "QCheckBox::indicator:hover { border-color: #6C8EBF; }"
     );
     
     QWidget *centralWidget = new QWidget(this);
@@ -136,7 +142,6 @@ void MainWindow::setupUI()
     
     m_connectButton = new QPushButton("Подключиться", this);
     m_connectButton->setMinimumWidth(150);
-    m_connectButton->setStyleSheet("QPushButton { background-color: #2196F3; } QPushButton:hover { background-color: #1976D2; }");
     connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
     connectionLayout->addWidget(m_connectButton);
     
@@ -258,8 +263,9 @@ void MainWindow::setupUI()
     
     // Статус бар
     m_statusLabel = new QLabel("● Не подключено", this);
-    m_statusLabel->setStyleSheet("color: #f44336; font-weight: bold;");
+    m_statusLabel->setStyleSheet("color: #DC2626; font-weight: 500;");
     m_statsLabel = new QLabel("", this);
+    m_statsLabel->setStyleSheet("color: #586069;");
     statusBar()->addWidget(m_statusLabel);
     statusBar()->addPermanentWidget(m_statsLabel);
     
@@ -368,10 +374,10 @@ void MainWindow::onConnectionStatusChanged(bool connected)
     m_isConnected = connected;
     if (connected) {
         m_statusLabel->setText("● Подключено");
-        m_statusLabel->setStyleSheet("color: #4CAF50; font-weight: bold;");
+        m_statusLabel->setStyleSheet("color: #059669; font-weight: 500;");
     } else {
         m_statusLabel->setText("● Не подключено");
-        m_statusLabel->setStyleSheet("color: #f44336; font-weight: bold;");
+        m_statusLabel->setStyleSheet("color: #DC2626; font-weight: 500;");
     }
 }
 
