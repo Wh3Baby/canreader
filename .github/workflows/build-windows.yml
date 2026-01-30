@@ -22,6 +22,7 @@ jobs:
         version: '6.5.3'
         modules: 'qtbase qtserialport'
         arch: 'win64_msvc2019_64'
+        cache: 'true'
     
     - name: Configure CMake
       run: |
