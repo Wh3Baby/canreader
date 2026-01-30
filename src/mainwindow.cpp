@@ -311,41 +311,54 @@ void MainWindow::onConnectClicked()
 
 void MainWindow::onSendClicked()
 {
+    if (!m_canInterface) {
+        QMessageBox::critical(this, "Ошибка", "CAN интерфейс не инициализирован!");
+        return;
+    }
+    
     if (!m_isConnected) {
         QMessageBox::warning(this, "Ошибка", "Сначала подключитесь к адаптеру!");
         return;
     }
     
-    QString canIdStr = m_canIdEdit->text();
-    QString canDataStr = m_canDataEdit->text();
+    QString canIdStr = m_canIdEdit->text().trimmed();
+    QString canDataStr = m_canDataEdit->text().trimmed();
     
     if (canIdStr.isEmpty()) {
         QMessageBox::warning(this, "Ошибка", "Введите CAN ID!");
+        m_canIdEdit->setFocus();
         return;
     }
     
     bool ok;
     quint32 canId = canIdStr.toUInt(&ok, 16);
-    if (!ok) {
-        QMessageBox::warning(this, "Ошибка", "Неверный формат CAN ID!");
+    if (!ok || canId > 0x1FFFFFFF) {
+        QMessageBox::warning(this, "Ошибка", QString("Неверный формат CAN ID!\nДопустимый диапазон: 0x000 - 0x1FFFFFFF"));
+        m_canIdEdit->setFocus();
+        m_canIdEdit->selectAll();
         return;
     }
     
     // Парсинг данных
     QByteArray data;
     if (!canDataStr.isEmpty()) {
-        QStringList bytes = canDataStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+        QStringList bytes = canDataStr.split(QRegularExpression("[\\s,]+"), Qt::SkipEmptyParts);
         for (const QString &byte : bytes) {
             bool byteOk;
             quint8 value = byte.toUInt(&byteOk, 16);
-            if (byteOk) {
+            if (byteOk && value <= 0xFF) {
                 data.append(value);
+            } else {
+                QMessageBox::warning(this, "Ошибка", QString("Неверный формат данных: %1\nИспользуйте hex значения (00-FF)").arg(byte));
+                m_canDataEdit->setFocus();
+                return;
             }
         }
     }
     
     if (data.size() > 8) {
-        QMessageBox::warning(this, "Ошибка", "CAN сообщение не может содержать более 8 байт!");
+        QMessageBox::warning(this, "Ошибка", QString("CAN сообщение не может содержать более 8 байт!\nПолучено: %1 байт").arg(data.size()));
+        m_canDataEdit->setFocus();
         return;
     }
     
@@ -1049,7 +1062,52 @@ void MainWindow::onDiagnosticError(const QString &error)
 
 void MainWindow::onOBD2ReadMultiplePIDs()
 {
-    // TODO: Реализовать чтение нескольких PID
-    QMessageBox::information(this, "Info", "Функция в разработке");
+    if (!m_isConnected) {
+        QMessageBox::warning(this, "Ошибка", "Сначала подключитесь!");
+        return;
+    }
+    
+    quint8 mode = m_obd2ModeCombo->currentData().toUInt();
+    QString pidText = m_obd2PIDEdit->text();
+    
+    if (pidText.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Введите PID для чтения!");
+        return;
+    }
+    
+    // Парсим список PID (через пробел или запятую)
+    QStringList pidStrings = pidText.split(QRegularExpression("[\\s,]+"), Qt::SkipEmptyParts);
+    QList<quint8> pids;
+    
+    for (const QString &pidStr : pidStrings) {
+        bool ok;
+        quint8 pid = pidStr.toUInt(&ok, 16);
+        if (ok) {
+            pids.append(pid);
+        } else {
+            m_diagnosticOutput->append(QString("OBD-II: Пропущен неверный PID: %1").arg(pidStr));
+        }
+    }
+    
+    if (pids.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Не найдено ни одного валидного PID!");
+        return;
+    }
+    
+    m_diagnosticOutput->append(QString("OBD-II: Чтение %1 PID...").arg(pids.size()));
+    
+    QMap<quint8, OBD2Value> values;
+    if (m_obd2Protocol->readMultiplePIDs(mode, pids, values)) {
+        m_diagnosticOutput->append("OBD-II: Результаты:");
+        for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+            const OBD2Value &value = it.value();
+            m_diagnosticOutput->append(QString("  PID 0x%1: %2 = %3")
+                                      .arg(it.key(), 2, 16, QChar('0'))
+                                      .arg(value.name)
+                                      .arg(value.value));
+        }
+    } else {
+        m_diagnosticOutput->append("OBD-II: Ошибка чтения PID");
+    }
 }
 

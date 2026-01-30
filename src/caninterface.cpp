@@ -31,6 +31,16 @@ CANInterface::~CANInterface()
 
 bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
 {
+    if (!m_serialPort) {
+        emit errorOccurred("Ошибка: серийный порт не инициализирован");
+        return false;
+    }
+    
+    if (portDisplayName.isEmpty()) {
+        emit errorOccurred("Ошибка: имя порта не указано");
+        return false;
+    }
+    
     if (m_connected) {
         disconnect();
     }
@@ -38,10 +48,15 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
     // Извлекаем реальное имя порта из строки с описанием
     // Формат: "ttyUSB0 (FTDI Serial Converter)" -> "ttyUSB0"
     // Или: "COM3 - USB Serial Port" -> "COM3"
-    QString portName = portDisplayName;
+    QString portName = portDisplayName.trimmed();
     int spaceIndex = portName.indexOf(' ');
     if (spaceIndex > 0) {
         portName = portName.left(spaceIndex);
+    }
+    
+    if (portName.isEmpty()) {
+        emit errorOccurred("Ошибка: не удалось извлечь имя порта");
+        return false;
     }
     
     m_serialPort->setPortName(portName);
@@ -104,7 +119,7 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
 
 void CANInterface::disconnect()
 {
-    if (m_serialPort->isOpen()) {
+    if (m_serialPort && m_serialPort->isOpen()) {
         m_serialPort->close();
     }
     m_connected = false;
@@ -119,17 +134,36 @@ bool CANInterface::isConnected() const
 
 bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
 {
+    if (!m_serialPort) {
+        emit errorOccurred("Ошибка: серийный порт не инициализирован");
+        return false;
+    }
+    
     if (!isConnected()) {
         emit errorOccurred("Адаптер не подключен");
         return false;
     }
     
+    // Валидация CAN ID (стандартный 11 бит или расширенный 29 бит)
+    if (canId > 0x1FFFFFFF) {
+        emit errorOccurred(QString("Неверный CAN ID: 0x%1 (максимум 29 бит)").arg(canId, 0, 16));
+        m_stats.errorsCount++;
+        return false;
+    }
+    
     if (data.size() > 8) {
-        emit errorOccurred("CAN сообщение не может содержать более 8 байт");
+        emit errorOccurred(QString("CAN сообщение не может содержать более 8 байт (получено: %1)").arg(data.size()));
+        m_stats.errorsCount++;
         return false;
     }
     
     QByteArray frame = buildCanFrame(canId, data);
+    if (frame.isEmpty()) {
+        emit errorOccurred("Ошибка построения CAN кадра");
+        m_stats.errorsCount++;
+        return false;
+    }
+    
     qint64 bytesWritten = m_serialPort->write(frame);
     
     if (bytesWritten == frame.size()) {
@@ -137,10 +171,15 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
             // Обновление статистики
             m_stats.messagesSent++;
             m_stats.messagesPerId[canId]++;
+            if (m_stats.firstMessageTime.isNull()) {
+                m_stats.firstMessageTime = QDateTime::currentDateTime();
+            }
+            m_stats.lastMessageTime = QDateTime::currentDateTime();
             emit statisticsUpdated();
             return true;
         } else {
             emit errorOccurred("Таймаут при записи в порт");
+            m_stats.errorsCount++;
             return false;
         }
     } else {
@@ -283,13 +322,21 @@ bool CANInterface::validateFrame(const QByteArray &frame) const
 
 void CANInterface::onDataReceived()
 {
+    if (!m_serialPort || !m_serialPort->isOpen()) {
+        return;
+    }
+    
     QByteArray data = m_serialPort->readAll();
+    if (data.isEmpty()) {
+        return;
+    }
     
     // Защита от переполнения буфера
     if (m_buffer.size() + data.size() > m_maxBufferSize) {
         emit errorOccurred(QString("Переполнение буфера! Очистка. Размер: %1 байт").arg(m_buffer.size()));
         m_buffer.clear();
         m_stats.errorsCount++;
+        emit statisticsUpdated();
     }
     
     m_buffer.append(data);
@@ -300,6 +347,10 @@ void CANInterface::parseReceivedData(QByteArray &buffer)
 {
     // Парсинг протокола Scanmatic 2 Pro
     // Формат кадра: 0xAA (старт) + тип (0x02 для CAN данных) + длина + CAN ID (4 байта) + данные (до 8 байт) + 0x55 (конец)
+    
+    if (buffer.isEmpty()) {
+        return;
+    }
     
     while (buffer.size() >= 3) {
         int startIndex = buffer.indexOf(FRAME_START);
