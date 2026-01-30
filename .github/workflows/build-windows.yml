@@ -20,8 +20,9 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.0'
-        modules: 'qt.qt6.5150.win64_msvc2019_64 qt.qt6.5150.addons.serialport.win64_msvc2019_64'
+        modules: 'qtbase qtserialport'
         arch: 'win64_msvc2019_64'
+        setup-python: 'false'
     
     - name: Configure CMake
       run: |
