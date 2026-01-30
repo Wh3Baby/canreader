@@ -116,6 +116,8 @@ build_qt6() {
     # Фейковые метки установки для инструментов хост-системы
     touch usr/x86_64-pc-linux-gnu/installed/cmake
     touch usr/x86_64-pc-linux-gnu/installed/ninja
+    touch usr/x86_64-pc-linux-gnu/installed/qt6-qtbase
+    touch usr/x86_64-pc-linux-gnu/installed/qt6-qtserialport
     
     echo "Сборка Qt6 для Windows (статическая версия)..."
     echo "Используется системный cmake, сборка только для Windows target"
