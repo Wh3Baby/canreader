@@ -103,11 +103,19 @@ build_qt6() {
     echo "✓ Настроен MXE для сборки только Windows target"
     
     # Удаляем частичную сборку для хост-системы если она есть
-    rm -rf usr/x86_64-pc-linux-gnu log/cmake_x86_64-pc-linux-gnu 2>/dev/null
+    rm -rf usr/x86_64-pc-linux-gnu log/cmake_x86_64-pc-linux-gnu log/ninja_x86_64-pc-linux-gnu 2>/dev/null
     
-    # Создаем фейковую установку cmake для хост-системы, чтобы MXE думал что он уже собран
+    # Создаем симлинки на системные инструменты для хост-системы
+    mkdir -p usr/x86_64-pc-linux-gnu/bin
     mkdir -p usr/x86_64-pc-linux-gnu/installed
+    
+    # Симлинки на системные инструменты
+    [ -f /usr/bin/cmake ] && ln -sf /usr/bin/cmake usr/x86_64-pc-linux-gnu/bin/cmake 2>/dev/null
+    [ -f /usr/bin/ninja ] && ln -sf /usr/bin/ninja usr/x86_64-pc-linux-gnu/bin/ninja 2>/dev/null
+    
+    # Фейковые метки установки для инструментов хост-системы
     touch usr/x86_64-pc-linux-gnu/installed/cmake
+    touch usr/x86_64-pc-linux-gnu/installed/ninja
     
     echo "Сборка Qt6 для Windows (статическая версия)..."
     echo "Используется системный cmake, сборка только для Windows target"
