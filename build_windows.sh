@@ -171,20 +171,31 @@ QT6VER_EOF
     mkdir -p usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6
     cat > usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6/Qt6Config.cmake << 'QT6BASE_EOF'
 # Fake Qt6 base config with required functions
+cmake_minimum_required(VERSION 3.16)
+
 function(qt_internal_project_setup)
     # Fake function to prevent CMake errors
 endfunction()
 
 function(qt_find_package)
-    # Fake function
+    # Fake function - just set FOUND to TRUE
+    set(${ARGV0}_FOUND TRUE PARENT_SCOPE)
 endfunction()
 
 function(qt_add_executable)
-    # Fake function
+    add_executable(${ARGV})
 endfunction()
 
 function(qt_add_library)
-    # Fake function
+    add_library(${ARGV})
+endfunction()
+
+function(qt_configure_file)
+    configure_file(${ARGV})
+endfunction()
+
+function(qt_install)
+    # Fake install function
 endfunction()
 QT6BASE_EOF
     
