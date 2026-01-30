@@ -7,9 +7,8 @@ CANInterface::CANInterface(QObject *parent)
     , m_currentBaudRate(0)
 {
     m_serialPort = new QSerialPort(this);
-    connect(m_serialPort, &QSerialPort::readyRead, this, &CANInterface::onDataReceived);
-    connect(m_serialPort, QOverload<QSerialPort::SerialPortError>::of(&QSerialPort::error),
-            this, &CANInterface::onSerialError);
+    QObject::connect(m_serialPort, &QSerialPort::readyRead, this, &CANInterface::onDataReceived);
+    QObject::connect(m_serialPort, &QSerialPort::errorOccurred, this, &CANInterface::onSerialError);
 }
 
 CANInterface::~CANInterface()
@@ -45,9 +44,9 @@ bool CANInterface::connect(const QString &portName, int baudRateKbps)
         // Формат: 0xAA (старт) + 0x01 (команда инициализации) + CAN скорость + 0x55 (конец)
         QByteArray initCmd;
         initCmd.append(FRAME_START);
-        initCmd.append(0x01); // Команда инициализации
+        initCmd.append(static_cast<quint8>(0x01)); // Команда инициализации
         initCmd.append(static_cast<quint8>(baudRateKbps == 500 ? 0x02 : 0x01)); // 0x01 = 250, 0x02 = 500
-        initCmd.append(0x00); // Резерв
+        initCmd.append(static_cast<quint8>(0x00)); // Резерв
         initCmd.append(FRAME_END);
         
         m_serialPort->write(initCmd);

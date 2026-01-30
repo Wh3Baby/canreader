@@ -32,7 +32,7 @@ private slots:
     void onSerialError(QSerialPort::SerialPortError error);
 
 private:
-    void parseReceivedData(const QByteArray &data);
+    void parseReceivedData(QByteArray &data);
     QByteArray buildCanFrame(quint32 canId, const QByteArray &data);
     QString formatCanMessage(quint32 canId, const QByteArray &data);
     
