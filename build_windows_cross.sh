@@ -1,8 +1,6 @@
 #!/bin/bash
 # Скрипт кросс-компиляции для Windows на Linux
 
-set -e
-
 echo "========================================"
 echo "Кросс-компиляция CAN Reader для Windows"
 echo "========================================"
@@ -26,16 +24,35 @@ echo ""
 
 # Проверка Qt6 для Windows
 echo "[2/5] Проверка Qt6 для Windows..."
-if [ -z "$Qt6_DIR" ] && [ ! -d "/opt/qt6-windows" ]; then
+QT6_FOUND=0
+
+# Проверка MXE (M cross environment)
+if [ -d "$HOME/mxe/usr/x86_64-w64-mingw32.static/qt6" ]; then
+    export PATH="$HOME/mxe/usr/bin:$PATH"
+    export Qt6_DIR="$HOME/mxe/usr/x86_64-w64-mingw32.static/qt6/lib/cmake/Qt6"
+    echo "✓ Найден Qt6 в MXE (static)"
+    QT6_FOUND=1
+elif [ -d "$HOME/mxe/usr/x86_64-w64-mingw32.shared/qt6" ]; then
+    export PATH="$HOME/mxe/usr/bin:$PATH"
+    export Qt6_DIR="$HOME/mxe/usr/x86_64-w64-mingw32.shared/qt6/lib/cmake/Qt6"
+    echo "✓ Найден Qt6 в MXE (shared)"
+    QT6_FOUND=1
+elif [ -n "$Qt6_DIR" ] && [ -d "$Qt6_DIR" ]; then
+    echo "✓ Найден Qt6_DIR: $Qt6_DIR"
+    QT6_FOUND=1
+elif [ -d "/opt/qt6-windows/lib/cmake/Qt6" ]; then
+    export Qt6_DIR="/opt/qt6-windows/lib/cmake/Qt6"
+    echo "✓ Найден Qt6 в /opt/qt6-windows"
+    QT6_FOUND=1
+elif [ -d "$HOME/qt6-windows/lib/cmake/Qt6" ]; then
+    export Qt6_DIR="$HOME/qt6-windows/lib/cmake/Qt6"
+    echo "✓ Найден Qt6 в $HOME/qt6-windows"
+    QT6_FOUND=1
+else
     echo "ПРЕДУПРЕЖДЕНИЕ: Qt6 для Windows не найден!"
-    echo ""
-    echo "Для кросс-компиляции нужен Qt6 для Windows."
-    echo "Варианты:"
-    echo "  1. Скачайте Qt6 для Windows и распакуйте в /opt/qt6-windows"
-    echo "  2. Или установите переменную Qt6_DIR:"
-    echo "     export Qt6_DIR=/path/to/qt6-windows/lib/cmake/Qt6"
-    echo ""
-    echo "Продолжаю попытку сборки..."
+    if [ -d "$HOME/mxe" ]; then
+        echo "MXE найден, но Qt6 еще не собран. Проверьте: ./check_qt6_build.sh"
+    fi
     echo ""
 fi
 
@@ -53,10 +70,8 @@ CMAKE_ARGS=(
     -DCMAKE_BUILD_TYPE=Release
 )
 
-if [ -n "$Qt6_DIR" ]; then
+if [ $QT6_FOUND -eq 1 ] && [ -n "$Qt6_DIR" ]; then
     CMAKE_ARGS+=(-DQt6_DIR="$Qt6_DIR")
-elif [ -d "/opt/qt6-windows/lib/cmake/Qt6" ]; then
-    CMAKE_ARGS+=(-DQt6_DIR=/opt/qt6-windows/lib/cmake/Qt6)
 fi
 
 cmake .. "${CMAKE_ARGS[@]}"
