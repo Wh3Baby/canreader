@@ -119,6 +119,13 @@ build_qt6() {
     touch usr/x86_64-pc-linux-gnu/installed/qt6-qtbase
     touch usr/x86_64-pc-linux-gnu/installed/qt6-qtserialport
     
+    # Создаем фейковую структуру Qt6 для хост-системы
+    mkdir -p usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6
+    touch usr/x86_64-pc-linux-gnu/qt6/lib/cmake/Qt6/Qt6Config.cmake
+    
+    # Очищаем временные файлы сборки Qt6 для хост-системы
+    rm -rf tmp-qt6-qtbase-x86_64-pc-linux-gnu log/qt6-qtbase_x86_64-pc-linux-gnu 2>/dev/null
+    
     echo "Сборка Qt6 для Windows (статическая версия)..."
     echo "Используется системный cmake, сборка только для Windows target"
     echo ""
