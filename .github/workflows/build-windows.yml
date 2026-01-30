@@ -3,40 +3,33 @@ name: Build Windows
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
     
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v4
+    - name: Install Qt6
+      uses: jurplel/install-qt-action@v3
       with:
-        version: '6.6.0'
-        host: 'windows'
-        target: 'desktop'
-        arch: 'win64_msvc2019_64'
-        modules: 'qtserialport'
+        version: '6.5.0'
+        modules: 'qt6-qtbase qt6-qtserialport'
+        arch: 'x64'
     
     - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=$env:Qt6_DIR
     
     - name: Build
-      run: cmake --build build --config Release
-    
-    - name: Deploy Qt
       run: |
-        mkdir deploy
-        copy build\Release\CANReader.exe deploy\
-        windeployqt deploy\CANReader.exe --release --no-translations
+        cmake --build build --config Release
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
-        name: CANReader-Windows
-        path: deploy/
+        name: CANReader.exe
+        path: build/Release/CANReader.exe
+
