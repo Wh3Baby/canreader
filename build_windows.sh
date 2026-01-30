@@ -118,7 +118,16 @@ build_qt6() {
     touch usr/x86_64-pc-linux-gnu/installed/ninja
     
     # Фейковые метки для всех Qt6 модулей для хост-системы
-    for pkg in qt6-qtbase qt6-qtserialport qt6-qtshadertools qt6-qtscxml qt6-qttools qt6-qtdeclarative qt6-qtwebsockets qt6-qtsvg qt6-qtimageformats qt6-qt5compat; do
+    # Создаем метки для всех найденных Qt6 пакетов в MXE
+    if [ -d src ]; then
+        find src -name "qt6*.mk" 2>/dev/null | xargs -I {} basename {} .mk | while read pkg; do
+            touch usr/x86_64-pc-linux-gnu/installed/$pkg 2>/dev/null
+        done
+    fi
+    # Также создаем для основных модулей на всякий случай
+    for pkg in qt6 qt6-qtbase qt6-qtserialport qt6-qtshadertools qt6-qtscxml qt6-qttools \
+               qt6-qtdeclarative qt6-qtwebsockets qt6-qtsvg qt6-qtimageformats qt6-qt5compat \
+               qt6-qtcharts qt6-qthttpserver qt6-qtservice qt6-qttranslations qt6-qtwebview; do
         touch usr/x86_64-pc-linux-gnu/installed/$pkg 2>/dev/null
     done
     
