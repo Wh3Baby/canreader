@@ -23,9 +23,24 @@ jobs:
         arch: 'win64_msvc2019_64'
         modules: 'qtserialport'
     
+    - name: Download and install libusb
+      run: |
+        $libusbUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.7z"
+        $libusbZip = "$env:TEMP\libusb.7z"
+        $libusbDir = "$env:TEMP\libusb"
+        Invoke-WebRequest -Uri $libusbUrl -OutFile $libusbZip
+        & "C:\Program Files\7-Zip\7z.exe" x $libusbZip -o"$libusbDir" -y
+        $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "MS64" -Recurse -Directory | Select-Object -First 1
+        if ($msvcDir) {
+          $env:LIBUSB_INCLUDE_DIR = "$msvcDir\include"
+          $env:LIBUSB_LIBRARY = "$msvcDir\lib\libusb-1.0.lib"
+          echo "LIBUSB_INCLUDE_DIR=$env:LIBUSB_INCLUDE_DIR" >> $env:GITHUB_ENV
+          echo "LIBUSB_LIBRARY=$env:LIBUSB_LIBRARY" >> $env:GITHUB_ENV
+        }
+    
     - name: Configure CMake
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=$env:Qt6_DIR
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=$env:Qt6_DIR -DLIBUSB_INCLUDE_DIR=$env:LIBUSB_INCLUDE_DIR -DLIBUSB_LIBRARY=$env:LIBUSB_LIBRARY
     
     - name: Build
       run: |
