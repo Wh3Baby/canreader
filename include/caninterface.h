@@ -9,7 +9,9 @@
 #include <QMap>
 #include <QDateTime>
 
+#ifdef USE_LIBUSB
 class USBDevice;
+#endif
 
 struct CANMessage {
     quint32 id;
