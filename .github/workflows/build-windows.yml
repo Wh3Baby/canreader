@@ -38,9 +38,9 @@ jobs:
           Invoke-WebRequest -Uri $libusbZipUrl -OutFile $libusbZipFile -UseBasicParsing
           Write-Host "Download completed"
         } catch {
-          Write-Host "Error downloading libusb: $_"
-          Write-Host "USB support will be disabled, but build will continue"
-          exit 0
+          Write-Host "ERROR: Failed to download libusb: $_"
+          Write-Host "libusb is required for USB support. Build will fail."
+          exit 1
         }
         
         Write-Host "Extracting libusb..."
@@ -48,9 +48,9 @@ jobs:
           Expand-Archive -Path $libusbZipFile -DestinationPath $libusbDir -Force
           Write-Host "Extraction completed"
         } catch {
-          Write-Host "Error extracting libusb: $_"
-          Write-Host "USB support will be disabled, but build will continue"
-          exit 0
+          Write-Host "ERROR: Failed to extract libusb: $_"
+          Write-Host "libusb is required for USB support. Build will fail."
+          exit 1
         }
         
         Write-Host "Looking for MSVC64 directory..."
@@ -80,16 +80,19 @@ jobs:
               Write-Host "  Include: $includeDir"
               Write-Host "  Library: $libFile"
             } else {
-              Write-Host "Warning: libusb library file not found at $libFile"
-              Write-Host "USB support will be disabled, but build will continue"
+              Write-Host "ERROR: libusb library file not found at $libFile"
+              Write-Host "libusb is required. Build will fail."
+              exit 1
             }
           } else {
-            Write-Host "Warning: libusb include directory not found at $includeDir"
-            Write-Host "USB support will be disabled, but build will continue"
+            Write-Host "ERROR: libusb include directory not found at $includeDir"
+            Write-Host "libusb is required. Build will fail."
+            exit 1
           }
         } else {
-          Write-Host "Warning: libusb MSVC directory not found"
-          Write-Host "USB support will be disabled, but build will continue"
+          Write-Host "ERROR: libusb MSVC directory not found"
+          Write-Host "libusb is required. Build will fail."
+          exit 1
         }
     
     - name: Configure CMake
