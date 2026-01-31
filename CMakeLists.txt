@@ -45,11 +45,7 @@ if(NOT LIBUSB_LIBRARY)
 endif()
 
 if(NOT LIBUSB_INCLUDE_DIR OR NOT LIBUSB_LIBRARY)
-    message(WARNING "libusb не найден. USB подключение будет недоступно.")
-    set(USE_LIBUSB 0)
-    # Добавляем пустые заглушки для компиляции
-    set(LIBUSB_INCLUDE_DIR "")
-    set(LIBUSB_LIBRARY "")
+    message(FATAL_ERROR "libusb не найден! USB подключение обязательно. Установите libusb или укажите пути через переменные окружения LIBUSB_INCLUDE_DIR и LIBUSB_LIBRARY")
 else()
     set(USE_LIBUSB 1)
     message(STATUS "libusb найден:")
@@ -71,9 +67,7 @@ set(SOURCES
     src/obd2protocol.cpp
 )
 
-if(USE_LIBUSB)
-    list(APPEND SOURCES src/usbdevice.cpp)
-endif()
+list(APPEND SOURCES src/usbdevice.cpp)
 
 set(HEADERS
     include/mainwindow.h
@@ -83,9 +77,7 @@ set(HEADERS
     include/obd2protocol.h
 )
 
-if(USE_LIBUSB)
-    list(APPEND HEADERS include/usbdevice.h)
-endif()
+list(APPEND HEADERS include/usbdevice.h)
 
 # Включаемые директории
 include_directories(include)
@@ -100,18 +92,9 @@ target_link_libraries(${PROJECT_NAME}
     Qt6::SerialPort
 )
 
-# Подключение libusb
-if(USE_LIBUSB)
-    if(LIBUSB_INCLUDE_DIR)
-        target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUSB_INCLUDE_DIR})
-    endif()
-    if(LIBUSB_LIBRARY)
-        target_link_libraries(${PROJECT_NAME} ${LIBUSB_LIBRARY})
-    endif()
-    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_LIBUSB=1)
-else()
-    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_LIBUSB=0)
-endif()
+# Подключение libusb (обязательно)
+target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUSB_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} ${LIBUSB_LIBRARY})
 
 # Для Windows
 if(WIN32)

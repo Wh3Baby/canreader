@@ -20,13 +20,9 @@ CANInterface::CANInterface(QObject *parent)
     QObject::connect(m_serialPort, &QSerialPort::readyRead, this, &CANInterface::onDataReceived);
     QObject::connect(m_serialPort, &QSerialPort::errorOccurred, this, &CANInterface::onSerialError);
     
-#ifdef USE_LIBUSB
     m_usbDevice = new USBDevice(this);
     QObject::connect(m_usbDevice, &USBDevice::dataReceived, this, &CANInterface::onUSBDataReceived);
     QObject::connect(m_usbDevice, &USBDevice::errorOccurred, this, &CANInterface::errorOccurred);
-#else
-    m_usbDevice = nullptr;
-#endif
     
     // Таймер для обновления статистики
     m_statsTimer = new QTimer(this);
@@ -223,9 +219,8 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
 
 bool CANInterface::connectUSB(quint16 vendorId, quint16 productId, int baudRateKbps)
 {
-#ifdef USE_LIBUSB
     if (!m_usbDevice) {
-        emit errorOccurred("USB устройство не инициализировано. libusb не найден при компиляции.");
+        emit errorOccurred("USB устройство не инициализировано");
         return false;
     }
     
@@ -299,11 +294,9 @@ bool CANInterface::connectUSB(quint16 vendorId, quint16 productId, int baudRateK
 void CANInterface::disconnect()
 {
     if (m_useUSB) {
-#ifdef USE_LIBUSB
         if (m_usbDevice) {
             m_usbDevice->close();
         }
-#endif
     } else {
         if (m_serialPort && m_serialPort->isOpen()) {
             m_serialPort->close();
@@ -318,11 +311,7 @@ void CANInterface::disconnect()
 bool CANInterface::isConnected() const
 {
     if (m_useUSB) {
-#ifdef USE_LIBUSB
         return m_connected && m_usbDevice && m_usbDevice->isOpen();
-#else
-        return false;
-#endif
     } else {
         return m_connected && m_serialPort->isOpen();
     }
@@ -359,7 +348,6 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
     bool success = false;
     
     if (m_useUSB) {
-#ifdef USE_LIBUSB
         if (!m_usbDevice || !m_usbDevice->isOpen()) {
             emit errorOccurred("USB устройство не открыто");
             m_stats.errorsCount++;
@@ -372,7 +360,6 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
             m_stats.errorsCount++;
             return false;
         }
-#endif
     } else {
         if (!m_serialPort) {
             emit errorOccurred("Ошибка: серийный порт не инициализирован");
@@ -440,11 +427,9 @@ QStringList CANInterface::getAvailablePorts() const
     bool foundTargetDevice = false;
     
     // Добавляем опцию прямого USB подключения
-#ifdef USE_LIBUSB
     // Проверяем, доступно ли USB устройство напрямую
     ports.append("USB (прямое подключение VID:20A2 PID:0001)");
     foundTargetDevice = true; // Предполагаем что USB доступен
-#endif
     
     for (const QSerialPortInfo &portInfo : portInfos) {
         QString portName = portInfo.portName();
