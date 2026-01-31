@@ -70,7 +70,10 @@ jobs:
         $includeDir = Join-Path $vcpkgRoot "installed\x64-windows\include"
         $libFile = Join-Path $vcpkgRoot "installed\x64-windows\lib\libusb-1.0.lib"
         
-        if (Test-Path $includeDir -and Test-Path $libFile) {
+        $includeExists = Test-Path $includeDir
+        $libExists = Test-Path $libFile
+        
+        if ($includeExists -and $libExists) {
           echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
           echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
           Write-Host "libusb installed successfully via vcpkg:"
@@ -79,8 +82,10 @@ jobs:
         } else {
           Write-Host "ERROR: libusb not found after vcpkg installation"
           Write-Host "  VCPKG_ROOT: $vcpkgRoot"
-          Write-Host "  Include dir exists: $(Test-Path $includeDir)"
-          Write-Host "  Library file exists: $(Test-Path $libFile)"
+          Write-Host "  Include dir exists: $includeExists"
+          Write-Host "  Library file exists: $libExists"
+          Write-Host "  Include path: $includeDir"
+          Write-Host "  Library path: $libFile"
           exit 1
         }
     
