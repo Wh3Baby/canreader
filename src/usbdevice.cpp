@@ -1,13 +1,23 @@
 #include "usbdevice.h"
 #include <QDebug>
 
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
 #include <libusb-1.0/libusb.h>
+#else
+// Заглушки для компиляции без libusb
+typedef void* libusb_context;
+typedef void* libusb_device_handle;
+#define LIBUSB_SUCCESS 0
+#define LIBUSB_ERROR_TIMEOUT -7
+#define LIBUSB_ERROR_NOT_SUPPORTED -12
 #endif
 
 USBDevice::USBDevice(QObject *parent)
     : QObject(parent)
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
+    , m_context(nullptr)
+    , m_handle(nullptr)
+#else
     , m_context(nullptr)
     , m_handle(nullptr)
 #endif
@@ -18,7 +28,7 @@ USBDevice::USBDevice(QObject *parent)
     m_pollTimer = new QTimer(this);
     connect(m_pollTimer, &QTimer::timeout, this, &USBDevice::pollUSB);
     
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     // Инициализация libusb
     int result = libusb_init(&m_context);
     if (result < 0) {
@@ -34,7 +44,7 @@ USBDevice::USBDevice(QObject *parent)
 USBDevice::~USBDevice()
 {
     close();
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     if (m_context) {
         libusb_exit(m_context);
         m_context = nullptr;
@@ -44,7 +54,7 @@ USBDevice::~USBDevice()
 
 bool USBDevice::open(quint16 vendorId, quint16 productId)
 {
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     if (!m_context) {
         m_lastError = "libusb не инициализирован";
         emit errorOccurred(m_lastError);
@@ -103,7 +113,7 @@ void USBDevice::close()
         m_pollTimer->stop();
     }
     
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     if (m_handle) {
         libusb_release_interface(m_handle, 0);
         libusb_close(m_handle);
@@ -117,7 +127,7 @@ void USBDevice::close()
 
 bool USBDevice::isOpen() const
 {
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     return m_isOpen && m_handle != nullptr;
 #else
     return false;
@@ -126,7 +136,7 @@ bool USBDevice::isOpen() const
 
 bool USBDevice::write(const QByteArray &data)
 {
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     if (!m_isOpen || !m_handle) {
         m_lastError = "Устройство не открыто";
         emit errorOccurred(m_lastError);
@@ -162,7 +172,7 @@ bool USBDevice::write(const QByteArray &data)
 QByteArray USBDevice::read(int timeoutMs)
 {
     QByteArray data;
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     if (!m_isOpen || !m_handle) {
         return data;
     }
@@ -191,7 +201,7 @@ QString USBDevice::errorString() const
 
 void USBDevice::pollUSB()
 {
-#ifdef USE_LIBUSB
+#if defined(USE_LIBUSB) && USE_LIBUSB
     if (!m_isOpen || !m_handle) {
         return;
     }

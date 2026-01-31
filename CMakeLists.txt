@@ -46,10 +46,15 @@ endif()
 
 if(NOT LIBUSB_INCLUDE_DIR OR NOT LIBUSB_LIBRARY)
     message(WARNING "libusb не найден. USB подключение будет недоступно.")
-    set(USE_LIBUSB OFF)
+    set(USE_LIBUSB 0)
+    # Добавляем пустые заглушки для компиляции
+    set(LIBUSB_INCLUDE_DIR "")
+    set(LIBUSB_LIBRARY "")
 else()
-    set(USE_LIBUSB ON)
-    message(STATUS "libusb найден: ${LIBUSB_LIBRARY}")
+    set(USE_LIBUSB 1)
+    message(STATUS "libusb найден:")
+    message(STATUS "  Include: ${LIBUSB_INCLUDE_DIR}")
+    message(STATUS "  Library: ${LIBUSB_LIBRARY}")
 endif()
 
 set(CMAKE_AUTOMOC ON)
@@ -97,9 +102,15 @@ target_link_libraries(${PROJECT_NAME}
 
 # Подключение libusb
 if(USE_LIBUSB)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUSB_INCLUDE_DIR})
-    target_link_libraries(${PROJECT_NAME} ${LIBUSB_LIBRARY})
+    if(LIBUSB_INCLUDE_DIR)
+        target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUSB_INCLUDE_DIR})
+    endif()
+    if(LIBUSB_LIBRARY)
+        target_link_libraries(${PROJECT_NAME} ${LIBUSB_LIBRARY})
+    endif()
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_LIBUSB=1)
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_LIBUSB=0)
 endif()
 
 # Для Windows
