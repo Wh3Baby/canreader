@@ -9,6 +9,8 @@
 #include <QMap>
 #include <QDateTime>
 
+class USBDevice;
+
 struct CANMessage {
     quint32 id;
     QByteArray data;
@@ -34,6 +36,7 @@ public:
     ~CANInterface();
     
     bool connect(const QString &portName, int baudRateKbps);
+    bool connectUSB(quint16 vendorId = 0x20A2, quint16 productId = 0x0001, int baudRateKbps = 250);
     void disconnect();
     bool isConnected() const;
     bool sendMessage(quint32 canId, const QByteArray &data);
@@ -66,6 +69,7 @@ signals:
 private slots:
     void onDataReceived();
     void onSerialError(QSerialPort::SerialPortError error);
+    void onUSBDataReceived(const QByteArray &data);
     void updateStatistics();
 
 private:
@@ -75,8 +79,10 @@ private:
     bool validateFrame(const QByteArray &frame) const;
     
     QSerialPort *m_serialPort;
+    USBDevice *m_usbDevice;
     QByteArray m_buffer;
     bool m_connected;
+    bool m_useUSB;
     int m_currentBaudRate;
     
     // Таймауты

@@ -7,6 +7,34 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Qt6
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets SerialPort)
 
+# libusb
+find_path(LIBUSB_INCLUDE_DIR libusb-1.0/libusb.h
+    PATHS
+    /usr/include
+    /usr/local/include
+    /opt/local/include
+    "C:/libusb/include"
+    "C:/Program Files/libusb/include"
+)
+
+find_library(LIBUSB_LIBRARY
+    NAMES usb-1.0 libusb-1.0
+    PATHS
+    /usr/lib
+    /usr/local/lib
+    /opt/local/lib
+    "C:/libusb/lib"
+    "C:/Program Files/libusb/lib"
+)
+
+if(NOT LIBUSB_INCLUDE_DIR OR NOT LIBUSB_LIBRARY)
+    message(WARNING "libusb не найден. USB подключение будет недоступно.")
+    set(USE_LIBUSB OFF)
+else()
+    set(USE_LIBUSB ON)
+    message(STATUS "libusb найден: ${LIBUSB_LIBRARY}")
+endif()
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -21,6 +49,10 @@ set(SOURCES
     src/obd2protocol.cpp
 )
 
+if(USE_LIBUSB)
+    list(APPEND SOURCES src/usbdevice.cpp)
+endif()
+
 set(HEADERS
     include/mainwindow.h
     include/caninterface.h
@@ -28,6 +60,10 @@ set(HEADERS
     include/udsprotocol.h
     include/obd2protocol.h
 )
+
+if(USE_LIBUSB)
+    list(APPEND HEADERS include/usbdevice.h)
+endif()
 
 # Включаемые директории
 include_directories(include)
@@ -41,6 +77,13 @@ target_link_libraries(${PROJECT_NAME}
     Qt6::Widgets
     Qt6::SerialPort
 )
+
+# Подключение libusb
+if(USE_LIBUSB)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUSB_INCLUDE_DIR})
+    target_link_libraries(${PROJECT_NAME} ${LIBUSB_LIBRARY})
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_LIBUSB=1)
+endif()
 
 # Для Windows
 if(WIN32)

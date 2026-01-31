@@ -281,15 +281,24 @@ void MainWindow::onConnectClicked()
     if (!m_isConnected) {
         QString portName = m_portCombo->currentText();
         if (portName.isEmpty()) {
-            QMessageBox::warning(this, "Ошибка", "Выберите последовательный порт!");
+            QMessageBox::warning(this, "Ошибка", "Выберите порт или USB подключение!");
             return;
         }
         
         int baudRate = m_baudRateCombo->currentData().toInt();
-        logMessage(QString("Попытка подключения к %1 со скоростью %2 кбит/с...")
-                   .arg(portName).arg(baudRate));
+        bool success = false;
         
-        if (m_canInterface->connect(portName, baudRate)) {
+        // Проверяем, выбрано ли прямое USB подключение
+        if (portName.contains("USB (прямое подключение", Qt::CaseInsensitive)) {
+            logMessage(QString("Попытка прямого USB подключения со скоростью %1 кбит/с...").arg(baudRate));
+            success = m_canInterface->connectUSB(0x20A2, 0x0001, baudRate);
+        } else {
+            logMessage(QString("Попытка подключения к %1 со скоростью %2 кбит/с...")
+                       .arg(portName).arg(baudRate));
+            success = m_canInterface->connect(portName, baudRate);
+        }
+        
+        if (success) {
             m_isConnected = true;
             m_connectButton->setText("Отключиться");
             m_portCombo->setEnabled(false);

@@ -1,4 +1,5 @@
 #include "caninterface.h"
+#include "usbdevice.h"
 #include <QDebug>
 #include <QThread>
 #include <QElapsedTimer>
@@ -7,6 +8,7 @@
 CANInterface::CANInterface(QObject *parent)
     : QObject(parent)
     , m_connected(false)
+    , m_useUSB(false)
     , m_currentBaudRate(0)
     , m_readTimeout(5000)
     , m_writeTimeout(1000)
@@ -17,6 +19,14 @@ CANInterface::CANInterface(QObject *parent)
     m_serialPort = new QSerialPort(this);
     QObject::connect(m_serialPort, &QSerialPort::readyRead, this, &CANInterface::onDataReceived);
     QObject::connect(m_serialPort, &QSerialPort::errorOccurred, this, &CANInterface::onSerialError);
+    
+#ifdef USE_LIBUSB
+    m_usbDevice = new USBDevice(this);
+    QObject::connect(m_usbDevice, &USBDevice::dataReceived, this, &CANInterface::onUSBDataReceived);
+    QObject::connect(m_usbDevice, &USBDevice::errorOccurred, this, &CANInterface::errorOccurred);
+#else
+    m_usbDevice = nullptr;
+#endif
     
     // Таймер для обновления статистики
     m_statsTimer = new QTimer(this);
@@ -211,28 +221,115 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
     }
 }
 
+bool CANInterface::connectUSB(quint16 vendorId, quint16 productId, int baudRateKbps)
+{
+#ifdef USE_LIBUSB
+    if (!m_usbDevice) {
+        emit errorOccurred("USB устройство не инициализировано. libusb не найден при компиляции.");
+        return false;
+    }
+    
+    if (m_connected) {
+        disconnect();
+    }
+    
+    m_currentBaudRate = baudRateKbps;
+    
+    qDebug() << "Попытка подключения к USB устройству VID:" << QString::number(vendorId, 16) 
+             << "PID:" << QString::number(productId, 16);
+    
+    if (!m_usbDevice->open(vendorId, productId)) {
+        emit errorOccurred(QString("Не удалось открыть USB устройство: %1").arg(m_usbDevice->errorString()));
+        return false;
+    }
+    
+    // Очистка буфера
+    m_buffer.clear();
+    
+    // Задержка для инициализации устройства
+    QElapsedTimer delayTimer;
+    delayTimer.start();
+    while (delayTimer.elapsed() < 100) {
+        QCoreApplication::processEvents();
+    }
+    
+    // Отправка команды инициализации для адаптера
+    // Формат: 0xAA (старт) + 0x01 (команда инициализации) + CAN скорость + 0x55 (конец)
+    QByteArray initCmd;
+    initCmd.append(FRAME_START);
+    initCmd.append(static_cast<quint8>(0x01)); // Команда инициализации
+    // Маппинг скорости CAN на код команды
+    quint8 speedCode = 0x01; // По умолчанию 250
+    switch (baudRateKbps) {
+        case 125:  speedCode = 0x00; break;
+        case 250:  speedCode = 0x01; break;
+        case 500:  speedCode = 0x02; break;
+        case 1000: speedCode = 0x03; break;
+        default:   speedCode = 0x01; break;
+    }
+    initCmd.append(speedCode);
+    initCmd.append(static_cast<quint8>(0x00)); // Резерв
+    initCmd.append(FRAME_END);
+    
+    if (!m_usbDevice->write(initCmd)) {
+        emit errorOccurred(QString("Ошибка записи команды инициализации: %1").arg(m_usbDevice->errorString()));
+        m_usbDevice->close();
+        return false;
+    }
+    
+    // Дополнительная задержка после отправки команды инициализации
+    QElapsedTimer delayTimer2;
+    delayTimer2.start();
+    while (delayTimer2.elapsed() < 200) {
+        QCoreApplication::processEvents();
+    }
+    
+    m_connected = true;
+    m_useUSB = true;
+    resetStatistics();
+    emit connectionStatusChanged(true);
+    qDebug() << "Подключение к USB адаптеру установлено успешно";
+    return true;
+#else
+    emit errorOccurred("USB подключение недоступно. libusb не найден при компиляции.");
+    return false;
+#endif
+}
+
 void CANInterface::disconnect()
 {
-    if (m_serialPort && m_serialPort->isOpen()) {
-        m_serialPort->close();
+    if (m_useUSB) {
+#ifdef USE_LIBUSB
+        if (m_usbDevice) {
+            m_usbDevice->close();
+        }
+#endif
+    } else {
+        if (m_serialPort && m_serialPort->isOpen()) {
+            m_serialPort->close();
+        }
     }
     m_connected = false;
+    m_useUSB = false;
     m_buffer.clear();
     emit connectionStatusChanged(false);
 }
 
 bool CANInterface::isConnected() const
 {
-    return m_connected && m_serialPort->isOpen();
+    if (m_useUSB) {
+#ifdef USE_LIBUSB
+        return m_connected && m_usbDevice && m_usbDevice->isOpen();
+#else
+        return false;
+#endif
+    } else {
+        return m_connected && m_serialPort->isOpen();
+    }
 }
 
 bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
 {
-    if (!m_serialPort) {
-        emit errorOccurred("Ошибка: серийный порт не инициализирован");
-        return false;
-    }
-    
     if (!isConnected()) {
         emit errorOccurred("Адаптер не подключен");
         return false;
@@ -258,48 +355,75 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
         return false;
     }
     
-    // Проверка состояния порта перед отправкой
-    if (!m_serialPort->isOpen()) {
-        emit errorOccurred("Порт не открыт");
-        m_stats.errorsCount++;
-        return false;
-    }
+    // Отправка через USB или Serial
+    bool success = false;
     
-    // Очистка выходного буфера перед отправкой (опционально, для надежности)
-    // m_serialPort->clear(QSerialPort::Output);
-    
-    qint64 bytesWritten = m_serialPort->write(frame);
-    
-    if (bytesWritten == frame.size()) {
-        // Увеличенный таймаут для записи (3 секунды вместо 1)
-        int writeTimeout = qMax(m_writeTimeout, 3000);
-        if (m_serialPort->waitForBytesWritten(writeTimeout)) {
-            // Обновление статистики
-            m_stats.messagesSent++;
-            m_stats.messagesPerId[canId]++;
-            if (m_stats.firstMessageTime.isNull()) {
-                m_stats.firstMessageTime = QDateTime::currentDateTime();
-            }
-            m_stats.lastMessageTime = QDateTime::currentDateTime();
-            emit statisticsUpdated();
-            return true;
-        } else {
-            QString errorMsg = QString("Таймаут при записи в порт: %1").arg(m_serialPort->errorString());
-            emit errorOccurred(errorMsg);
+    if (m_useUSB) {
+#ifdef USE_LIBUSB
+        if (!m_usbDevice || !m_usbDevice->isOpen()) {
+            emit errorOccurred("USB устройство не открыто");
             m_stats.errorsCount++;
-            
-            // Проверка, не отключилось ли устройство
-            if (m_serialPort->error() == QSerialPort::ResourceError) {
-                disconnect();
-            }
             return false;
         }
+        
+        success = m_usbDevice->write(frame);
+        if (!success) {
+            emit errorOccurred(QString("Ошибка записи в USB: %1").arg(m_usbDevice->errorString()));
+            m_stats.errorsCount++;
+            return false;
+        }
+#endif
     } else {
-        emit errorOccurred(QString("Ошибка записи в порт: записано %1 из %2 байт. Ошибка: %3")
-                          .arg(bytesWritten).arg(frame.size()).arg(m_serialPort->errorString()));
-        m_stats.errorsCount++;
-        return false;
+        if (!m_serialPort) {
+            emit errorOccurred("Ошибка: серийный порт не инициализирован");
+            m_stats.errorsCount++;
+            return false;
+        }
+        
+        if (!m_serialPort->isOpen()) {
+            emit errorOccurred("Порт не открыт");
+            m_stats.errorsCount++;
+            return false;
+        }
+        
+        qint64 bytesWritten = m_serialPort->write(frame);
+        
+        if (bytesWritten == frame.size()) {
+            // Увеличенный таймаут для записи (3 секунды вместо 1)
+            int writeTimeout = qMax(m_writeTimeout, 3000);
+            success = m_serialPort->waitForBytesWritten(writeTimeout);
+            if (!success) {
+                QString errorMsg = QString("Таймаут при записи в порт: %1").arg(m_serialPort->errorString());
+                emit errorOccurred(errorMsg);
+                m_stats.errorsCount++;
+                
+                // Проверка, не отключилось ли устройство
+                if (m_serialPort->error() == QSerialPort::ResourceError) {
+                    disconnect();
+                }
+                return false;
+            }
+        } else {
+            emit errorOccurred(QString("Ошибка записи в порт: записано %1 из %2 байт. Ошибка: %3")
+                              .arg(bytesWritten).arg(frame.size()).arg(m_serialPort->errorString()));
+            m_stats.errorsCount++;
+            return false;
+        }
     }
+    
+    if (success) {
+        // Обновление статистики
+        m_stats.messagesSent++;
+        m_stats.messagesPerId[canId]++;
+        if (m_stats.firstMessageTime.isNull()) {
+            m_stats.firstMessageTime = QDateTime::currentDateTime();
+        }
+        m_stats.lastMessageTime = QDateTime::currentDateTime();
+        emit statisticsUpdated();
+        return true;
+    }
+    
+    return false;
 }
 
 QStringList CANInterface::getAvailablePorts() const
@@ -314,6 +438,13 @@ QStringList CANInterface::getAvailablePorts() const
     qDebug() << "Поиск доступных портов... Найдено:" << portInfos.size();
     
     bool foundTargetDevice = false;
+    
+    // Добавляем опцию прямого USB подключения
+#ifdef USE_LIBUSB
+    // Проверяем, доступно ли USB устройство напрямую
+    ports.append("USB (прямое подключение VID:20A2 PID:0001)");
+    foundTargetDevice = true; // Предполагаем что USB доступен
+#endif
     
     for (const QSerialPortInfo &portInfo : portInfos) {
         QString portName = portInfo.portName();
@@ -377,11 +508,7 @@ QStringList CANInterface::getAvailablePorts() const
     
     if (!foundTargetDevice) {
         qDebug() << "ВНИМАНИЕ: Адаптер с VID:20A2 PID:0001 не найден среди доступных COM портов!";
-        qDebug() << "Возможные причины:";
-        qDebug() << "1. Устройство не подключено";
-        qDebug() << "2. Драйверы не установлены";
-        qDebug() << "3. Устройство не создает виртуальный COM порт";
-        qDebug() << "4. Устройство требует специального драйвера или протокола";
+        qDebug() << "Используйте прямое USB подключение если доступно.";
     }
     
     return ports;
