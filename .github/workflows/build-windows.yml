@@ -25,45 +25,71 @@ jobs:
     
     - name: Download and install libusb
       run: |
-        $libusbUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.7z"
-        $libusbZip = "$env:TEMP\libusb.7z"
         $libusbDir = "$env:TEMP\libusb"
+        New-Item -ItemType Directory -Force -Path $libusbDir | Out-Null
         
-        Write-Host "Downloading libusb..."
-        Invoke-WebRequest -Uri $libusbUrl -OutFile $libusbZip
+        Write-Host "Downloading libusb binaries (zip format)..."
+        # Используем zip формат, который можно распаковать встроенными средствами
+        $libusbZipUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.zip"
+        $libusbZipFile = "$env:TEMP\libusb.zip"
+        
+        try {
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri $libusbZipUrl -OutFile $libusbZipFile -UseBasicParsing
+          Write-Host "Download completed"
+        } catch {
+          Write-Host "Error downloading libusb: $_"
+          Write-Host "USB support will be disabled, but build will continue"
+          exit 0
+        }
         
         Write-Host "Extracting libusb..."
-        # Используем встроенный Expand-Archive или 7z если доступен
-        if (Test-Path "C:\Program Files\7-Zip\7z.exe") {
-          & "C:\Program Files\7-Zip\7z.exe" x $libusbZip -o"$libusbDir" -y
-        } else {
-          # Альтернатива: используем choco для установки 7z или скачиваем zip версию
-          Write-Host "7-Zip not found, trying alternative method..."
-          $libusbZipUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.zip"
-          $libusbZipFile = "$env:TEMP\libusb.zip"
-          Invoke-WebRequest -Uri $libusbZipUrl -OutFile $libusbZipFile
+        try {
           Expand-Archive -Path $libusbZipFile -DestinationPath $libusbDir -Force
+          Write-Host "Extraction completed"
+        } catch {
+          Write-Host "Error extracting libusb: $_"
+          Write-Host "USB support will be disabled, but build will continue"
+          exit 0
         }
         
         Write-Host "Looking for MSVC64 directory..."
-        $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "MS64" -Recurse -Directory | Select-Object -First 1
+        $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "MS64" -Recurse -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $msvcDir) {
           # Попробуем найти в другой структуре
-          $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "*MSVC*" -Recurse -Directory | Select-Object -First 1
+          $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "*MSVC*" -Recurse -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $msvcDir) {
+          # Попробуем найти любую директорию с include
+          $msvcDir = Get-ChildItem -Path "$libusbDir" -Recurse -Directory -Filter "include" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msvcDir) {
+            $msvcDir = $msvcDir.Parent
+          }
         }
         
         if ($msvcDir) {
           $includeDir = Join-Path $msvcDir.FullName "include"
-          $libFile = Join-Path $msvcDir.FullName "lib\libusb-1.0.lib"
+          $libDir = Join-Path $msvcDir.FullName "lib"
+          $libFile = Join-Path $libDir "libusb-1.0.lib"
+          
           if (Test-Path $includeDir) {
-            echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
-            echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
-            Write-Host "libusb found: $includeDir"
+            if (Test-Path $libFile) {
+              echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
+              echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
+              Write-Host "libusb found successfully:"
+              Write-Host "  Include: $includeDir"
+              Write-Host "  Library: $libFile"
+            } else {
+              Write-Host "Warning: libusb library file not found at $libFile"
+              Write-Host "USB support will be disabled, but build will continue"
+            }
           } else {
-            Write-Host "Warning: libusb include directory not found, USB support will be disabled"
+            Write-Host "Warning: libusb include directory not found at $includeDir"
+            Write-Host "USB support will be disabled, but build will continue"
           }
         } else {
-          Write-Host "Warning: libusb MSVC directory not found, USB support will be disabled"
+          Write-Host "Warning: libusb MSVC directory not found"
+          Write-Host "USB support will be disabled, but build will continue"
         }
     
     - name: Configure CMake
