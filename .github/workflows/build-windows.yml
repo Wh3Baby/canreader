@@ -23,113 +23,49 @@ jobs:
         arch: 'win64_msvc2019_64'
         modules: 'qtserialport'
     
-    - name: Download and install libusb
+    - name: Install vcpkg
+      uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkgGitCommitSha: 'latest'
+    
+    - name: Install libusb via vcpkg
       run: |
-        $libusbDir = "$env:TEMP\libusb"
-        New-Item -ItemType Directory -Force -Path $libusbDir | Out-Null
-        
-        Write-Host "Downloading libusb binaries (zip format)..."
-        # Используем zip формат, который можно распаковать встроенными средствами
-        # Пробуем несколько вариантов URL
-        $libusbZipUrls = @(
-            "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.zip",
-            "https://github.com/libusb/libusb/releases/download/v1.0.26/libusb-1.0.26-binaries.zip",
-            "https://sourceforge.net/projects/libusb/files/libusb-1.0/libusb-1.0.27/libusb-1.0.27-binaries.7z/download"
-        )
-        $libusbZipFile = "$env:TEMP\libusb.zip"
-        $downloadSuccess = $false
-        
-        foreach ($url in $libusbZipUrls) {
-          try {
-            Write-Host "Trying URL: $url"
-            $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $url -OutFile $libusbZipFile -UseBasicParsing
-            Write-Host "Download completed from: $url"
-            $downloadSuccess = $true
-            break
-          } catch {
-            Write-Host "Failed to download from $url : $_"
-            continue
-          }
-        }
-        
-        if (-not $downloadSuccess) {
-          Write-Host "ERROR: Failed to download libusb from all URLs"
-          Write-Host "Trying alternative: building from source or using vcpkg"
-          # Попробуем использовать vcpkg
-          vcpkg install libusb:x64-windows
-          if ($LASTEXITCODE -eq 0) {
-            $vcpkgRoot = $env:VCPKG_ROOT
-            if (-not $vcpkgRoot) {
-              $vcpkgRoot = "C:\vcpkg"
-            }
-            $includeDir = Join-Path $vcpkgRoot "installed\x64-windows\include"
-            $libFile = Join-Path $vcpkgRoot "installed\x64-windows\lib\libusb-1.0.lib"
-            if (Test-Path $includeDir -and Test-Path $libFile) {
-              echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
-              echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
-              Write-Host "libusb found via vcpkg"
-              $downloadSuccess = $true
+        vcpkg install libusb:x64-windows
+        $vcpkgRoot = $env:VCPKG_ROOT
+        if (-not $vcpkgRoot) {
+          # Попробуем найти vcpkg в стандартных местах
+          $possiblePaths = @(
+            "$env:AGENT_TOOLSDIRECTORY\vcpkg",
+            "C:\vcpkg",
+            "$env:ProgramFiles\vcpkg"
+          )
+          foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+              $vcpkgRoot = $path
+              break
             }
           }
         }
         
-        if (-not $downloadSuccess) {
-          Write-Host "ERROR: All download methods failed"
+        if (-not $vcpkgRoot) {
+          Write-Host "ERROR: VCPKG_ROOT not set and vcpkg not found in standard locations"
           exit 1
         }
         
-        if ($downloadSuccess -and (Test-Path $libusbZipFile)) {
-          Write-Host "Extracting libusb..."
-          try {
-            Expand-Archive -Path $libusbZipFile -DestinationPath $libusbDir -Force
-            Write-Host "Extraction completed"
-          } catch {
-            Write-Host "ERROR: Failed to extract libusb: $_"
-            Write-Host "libusb is required for USB support. Build will fail."
-            exit 1
-          }
-        }
+        $includeDir = Join-Path $vcpkgRoot "installed\x64-windows\include"
+        $libFile = Join-Path $vcpkgRoot "installed\x64-windows\lib\libusb-1.0.lib"
         
-        Write-Host "Looking for MSVC64 directory..."
-        $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "MS64" -Recurse -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $msvcDir) {
-          # Попробуем найти в другой структуре
-          $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "*MSVC*" -Recurse -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
-        if (-not $msvcDir) {
-          # Попробуем найти любую директорию с include
-          $msvcDir = Get-ChildItem -Path "$libusbDir" -Recurse -Directory -Filter "include" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($msvcDir) {
-            $msvcDir = $msvcDir.Parent
-          }
-        }
-        
-        if ($msvcDir) {
-          $includeDir = Join-Path $msvcDir.FullName "include"
-          $libDir = Join-Path $msvcDir.FullName "lib"
-          $libFile = Join-Path $libDir "libusb-1.0.lib"
-          
-          if (Test-Path $includeDir) {
-            if (Test-Path $libFile) {
-              echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
-              echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
-              Write-Host "libusb found successfully:"
-              Write-Host "  Include: $includeDir"
-              Write-Host "  Library: $libFile"
-            } else {
-              Write-Host "ERROR: libusb library file not found at $libFile"
-              Write-Host "libusb is required. Build will fail."
-              exit 1
-            }
-          } else {
-            Write-Host "ERROR: libusb include directory not found at $includeDir"
-            Write-Host "libusb is required. Build will fail."
-            exit 1
-          }
+        if (Test-Path $includeDir -and Test-Path $libFile) {
+          echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
+          echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
+          Write-Host "libusb installed successfully via vcpkg:"
+          Write-Host "  Include: $includeDir"
+          Write-Host "  Library: $libFile"
         } else {
-          Write-Host "ERROR: libusb MSVC directory not found"
-          Write-Host "libusb is required. Build will fail."
+          Write-Host "ERROR: libusb not found after vcpkg installation"
+          Write-Host "  VCPKG_ROOT: $vcpkgRoot"
+          Write-Host "  Include dir exists: $(Test-Path $includeDir)"
+          Write-Host "  Library file exists: $(Test-Path $libFile)"
           exit 1
         }
     
