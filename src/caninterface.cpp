@@ -285,10 +285,6 @@ bool CANInterface::connectUSB(quint16 vendorId, quint16 productId, int baudRateK
     emit connectionStatusChanged(true);
     qDebug() << "Подключение к USB адаптеру установлено успешно";
     return true;
-#else
-    emit errorOccurred("USB подключение недоступно. libusb не найден при компиляции.");
-    return false;
-#endif
 }
 
 void CANInterface::disconnect()
