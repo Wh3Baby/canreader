@@ -30,27 +30,65 @@ jobs:
         
         Write-Host "Downloading libusb binaries (zip format)..."
         # Используем zip формат, который можно распаковать встроенными средствами
-        $libusbZipUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.zip"
+        # Пробуем несколько вариантов URL
+        $libusbZipUrls = @(
+            "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.zip",
+            "https://github.com/libusb/libusb/releases/download/v1.0.26/libusb-1.0.26-binaries.zip",
+            "https://sourceforge.net/projects/libusb/files/libusb-1.0/libusb-1.0.27/libusb-1.0.27-binaries.7z/download"
+        )
         $libusbZipFile = "$env:TEMP\libusb.zip"
+        $downloadSuccess = $false
         
-        try {
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri $libusbZipUrl -OutFile $libusbZipFile -UseBasicParsing
-          Write-Host "Download completed"
-        } catch {
-          Write-Host "ERROR: Failed to download libusb: $_"
-          Write-Host "libusb is required for USB support. Build will fail."
+        foreach ($url in $libusbZipUrls) {
+          try {
+            Write-Host "Trying URL: $url"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $url -OutFile $libusbZipFile -UseBasicParsing
+            Write-Host "Download completed from: $url"
+            $downloadSuccess = $true
+            break
+          } catch {
+            Write-Host "Failed to download from $url : $_"
+            continue
+          }
+        }
+        
+        if (-not $downloadSuccess) {
+          Write-Host "ERROR: Failed to download libusb from all URLs"
+          Write-Host "Trying alternative: building from source or using vcpkg"
+          # Попробуем использовать vcpkg
+          vcpkg install libusb:x64-windows
+          if ($LASTEXITCODE -eq 0) {
+            $vcpkgRoot = $env:VCPKG_ROOT
+            if (-not $vcpkgRoot) {
+              $vcpkgRoot = "C:\vcpkg"
+            }
+            $includeDir = Join-Path $vcpkgRoot "installed\x64-windows\include"
+            $libFile = Join-Path $vcpkgRoot "installed\x64-windows\lib\libusb-1.0.lib"
+            if (Test-Path $includeDir -and Test-Path $libFile) {
+              echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
+              echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
+              Write-Host "libusb found via vcpkg"
+              $downloadSuccess = $true
+            }
+          }
+        }
+        
+        if (-not $downloadSuccess) {
+          Write-Host "ERROR: All download methods failed"
           exit 1
         }
         
-        Write-Host "Extracting libusb..."
-        try {
-          Expand-Archive -Path $libusbZipFile -DestinationPath $libusbDir -Force
-          Write-Host "Extraction completed"
-        } catch {
-          Write-Host "ERROR: Failed to extract libusb: $_"
-          Write-Host "libusb is required for USB support. Build will fail."
-          exit 1
+        if ($downloadSuccess -and (Test-Path $libusbZipFile)) {
+          Write-Host "Extracting libusb..."
+          try {
+            Expand-Archive -Path $libusbZipFile -DestinationPath $libusbDir -Force
+            Write-Host "Extraction completed"
+          } catch {
+            Write-Host "ERROR: Failed to extract libusb: $_"
+            Write-Host "libusb is required for USB support. Build will fail."
+            exit 1
+          }
         }
         
         Write-Host "Looking for MSVC64 directory..."
