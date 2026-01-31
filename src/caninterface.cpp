@@ -65,11 +65,42 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
     // Проверка доступности порта
     QSerialPortInfo portInfo(portName);
     if (portInfo.isNull()) {
-        emit errorOccurred(QString("Порт %1 не найден в системе").arg(portName));
-        return false;
+        // Попробуем найти порт по VID/PID если порт не найден по имени
+        const quint16 targetVendorId = 0x20A2;
+        const quint16 targetProductId = 0x0001;
+        
+        bool foundByVidPid = false;
+        const auto allPorts = QSerialPortInfo::availablePorts();
+        for (const QSerialPortInfo &info : allPorts) {
+            if (info.vendorIdentifier() == targetVendorId && 
+                info.productIdentifier() == targetProductId) {
+                portInfo = info;
+                foundByVidPid = true;
+                qDebug() << "Найден адаптер по VID/PID:" << info.portName();
+                break;
+            }
+        }
+        
+        if (!foundByVidPid) {
+            QString errorMsg = QString("Порт %1 не найден в системе.\n\n").arg(portName);
+            errorMsg += "Проверьте:\n";
+            errorMsg += "1. Подключено ли устройство USB (VID:20A2 PID:0001)\n";
+            errorMsg += "2. Установлены ли драйверы для устройства\n";
+            errorMsg += "3. Создается ли виртуальный COM порт при подключении\n";
+            errorMsg += "4. Если устройство не создает COM порт, может потребоваться специальный драйвер или протокол";
+            emit errorOccurred(errorMsg);
+            return false;
+        }
     }
     
     m_serialPort->setPort(portInfo);
+    
+    // Дополнительная диагностика
+    qDebug() << "Подключение к порту:" << portInfo.portName();
+    qDebug() << "VID:" << QString::number(portInfo.vendorIdentifier(), 16);
+    qDebug() << "PID:" << QString::number(portInfo.productIdentifier(), 16);
+    qDebug() << "Описание:" << portInfo.description();
+    qDebug() << "Производитель:" << portInfo.manufacturer();
     
     // Scanmatic 2 Pro использует стандартные скорости последовательного порта
     // Маппинг скоростей CAN на скорости последовательного порта
@@ -276,21 +307,33 @@ QStringList CANInterface::getAvailablePorts() const
     QStringList ports;
     const auto portInfos = QSerialPortInfo::availablePorts();
     
-    // VID и PID для Scanmatic 2 Pro адаптера
+    // VID и PID для адаптера
     const quint16 targetVendorId = 0x20A2;
     const quint16 targetProductId = 0x0001;
+    
+    qDebug() << "Поиск доступных портов... Найдено:" << portInfos.size();
+    
+    bool foundTargetDevice = false;
     
     for (const QSerialPortInfo &portInfo : portInfos) {
         QString portName = portInfo.portName();
         QString description = portInfo.description();
         QString manufacturer = portInfo.manufacturer();
+        QString serialNumber = portInfo.serialNumber();
         quint16 vendorId = portInfo.vendorIdentifier();
         quint16 productId = portInfo.productIdentifier();
         
-        // Проверка на соответствие VID/PID (опционально, если указаны)
+        qDebug() << "Порт:" << portName 
+                 << "VID:" << QString::number(vendorId, 16) 
+                 << "PID:" << QString::number(productId, 16)
+                 << "Описание:" << description;
+        
+        // Проверка на соответствие VID/PID
         bool matchesTarget = false;
         if (vendorId == targetVendorId && productId == targetProductId) {
             matchesTarget = true;
+            foundTargetDevice = true;
+            qDebug() << "Найден целевой адаптер на порту:" << portName;
         }
         
         // Формируем информативную строку для отображения
@@ -302,11 +345,15 @@ QStringList CANInterface::getAvailablePorts() const
             displayName += QString(" - %1").arg(description);
         }
         if (matchesTarget) {
-            displayName += " [Scanmatic 2 Pro]";
+            displayName += " [USB-CAN Адаптер VID:20A2 PID:0001]";
+        }
+        // Показываем VID:PID если доступны
+        if (vendorId != 0 || productId != 0) {
+            displayName += QString(" [VID:%1 PID:%2]")
+                          .arg(vendorId, 4, 16, QChar('0')).arg(productId, 4, 16, QChar('0'));
         }
 #else
         // На Linux: /dev/ttyUSB0, /dev/ttyACM0 и т.д.
-        // QSerialPortInfo::portName() уже возвращает имя устройства
         if (!description.isEmpty() || !manufacturer.isEmpty()) {
             QString info = description;
             if (!manufacturer.isEmpty()) {
@@ -316,7 +363,7 @@ QStringList CANInterface::getAvailablePorts() const
             displayName += QString(" (%1)").arg(info);
         }
         if (matchesTarget) {
-            displayName += " [Scanmatic 2 Pro]";
+            displayName += " [USB-CAN Адаптер VID:20A2 PID:0001]";
         }
         // На Linux также показываем VID:PID если доступны
         if (vendorId != 0 || productId != 0) {
@@ -326,6 +373,15 @@ QStringList CANInterface::getAvailablePorts() const
 #endif
         
         ports.append(displayName);
+    }
+    
+    if (!foundTargetDevice) {
+        qDebug() << "ВНИМАНИЕ: Адаптер с VID:20A2 PID:0001 не найден среди доступных COM портов!";
+        qDebug() << "Возможные причины:";
+        qDebug() << "1. Устройство не подключено";
+        qDebug() << "2. Драйверы не установлены";
+        qDebug() << "3. Устройство не создает виртуальный COM порт";
+        qDebug() << "4. Устройство требует специального драйвера или протокола";
     }
     
     return ports;
