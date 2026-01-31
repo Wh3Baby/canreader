@@ -243,7 +243,7 @@ void MainWindow::setupUI()
     m_logTextEdit->setReadOnly(true);
     m_logTextEdit->setFont(QFont("Courier New", 9));
     m_logTextEdit->setMaximumHeight(120);
-    m_logTextEdit->hide();
+    m_logTextEdit->show(); // Показываем лог по умолчанию
     
     logLayout->addLayout(logButtonsLayout);
     logLayout->addWidget(m_messageTable, 1);
@@ -296,8 +296,10 @@ void MainWindow::onConnectClicked()
             m_baudRateCombo->setEnabled(false);
             m_sendButton->setEnabled(true);
             logMessage("Подключение установлено успешно", "SUCCESS");
+            QMessageBox::information(this, "Успех", "Подключение к адаптеру установлено успешно!");
         } else {
             logMessage("Ошибка подключения", "ERROR");
+            // Ошибка уже показана через onErrorOccurred, но можно добавить дополнительную информацию
         }
     } else {
         m_canInterface->disconnect();
@@ -409,6 +411,8 @@ void MainWindow::onConnectionStatusChanged(bool connected)
 void MainWindow::onErrorOccurred(const QString &error)
 {
     logMessage(QString("ОШИБКА: %1").arg(error), "ERROR");
+    // Показываем критичные ошибки в диалоговом окне
+    QMessageBox::critical(this, "Ошибка", error);
 }
 
 void MainWindow::logMessage(const QString &message, const QString &type)

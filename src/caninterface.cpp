@@ -1,6 +1,8 @@
 #include "caninterface.h"
 #include <QDebug>
 #include <QThread>
+#include <QElapsedTimer>
+#include <QCoreApplication>
 
 CANInterface::CANInterface(QObject *parent)
     : QObject(parent)
@@ -96,7 +98,12 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
         m_buffer.clear();
         
         // Задержка для инициализации устройства после открытия порта
-        QThread::msleep(100);
+        // Используем QCoreApplication::processEvents чтобы не блокировать UI
+        QElapsedTimer delayTimer;
+        delayTimer.start();
+        while (delayTimer.elapsed() < 100) {
+            QCoreApplication::processEvents();
+        }
         
         // Отправка команды инициализации для Scanmatic 2 Pro
         // Формат: 0xAA (старт) + 0x01 (команда инициализации) + CAN скорость + 0x55 (конец)
@@ -135,7 +142,12 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
         }
         
         // Дополнительная задержка после отправки команды инициализации
-        QThread::msleep(200);
+        // Используем QCoreApplication::processEvents чтобы не блокировать UI
+        QElapsedTimer delayTimer2;
+        delayTimer2.start();
+        while (delayTimer2.elapsed() < 200) {
+            QCoreApplication::processEvents();
+        }
         
         // Очистка входного буфера после инициализации
         m_serialPort->clear(QSerialPort::Input);
