@@ -1,7 +1,10 @@
 #include "udsprotocol.h"
 #include <QDebug>
 #include <QRegularExpression>
-#include <QEventLoop>
+#include <QTimer>
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QThread>
 
 UDSProtocol::UDSProtocol(CANInterface *canInterface, QObject *parent)
     : DiagnosticProtocol(canInterface, parent)
@@ -32,11 +35,15 @@ bool UDSProtocol::readDataByIdentifier(quint16 did, QByteArray &response)
         return false;
     }
     
-    // Ждем ответа (синхронно)
-    QEventLoop loop;
-    connect(this, &UDSProtocol::responseReceived, &loop, &QEventLoop::quit);
-    connect(this, &UDSProtocol::errorOccurred, &loop, &QEventLoop::quit);
-    loop.exec();
+    // Ждем ответа (синхронно) с таймаутом
+    m_lastResponse.clear();
+    QElapsedTimer timer;
+    timer.start();
+    
+    while (m_lastResponse.isEmpty() && timer.elapsed() < m_timeout) {
+        QCoreApplication::processEvents();
+        QThread::msleep(10);
+    }
     
     if (m_lastResponse.isEmpty()) {
         return false;
