@@ -763,3 +763,16 @@ void CANInterface::onSerialError(QSerialPort::SerialPortError error)
     }
 }
 
+void CANInterface::onUSBDataReceived(const QByteArray &data)
+{
+    if (!m_connected || !m_useUSB) {
+        return;
+    }
+    
+    // Добавляем данные в буфер
+    m_buffer.append(data);
+    
+    // Парсим полученные данные
+    parseReceivedData(m_buffer);
+}
+
