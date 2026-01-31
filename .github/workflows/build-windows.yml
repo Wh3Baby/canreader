@@ -28,14 +28,42 @@ jobs:
         $libusbUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.7z"
         $libusbZip = "$env:TEMP\libusb.7z"
         $libusbDir = "$env:TEMP\libusb"
+        
+        Write-Host "Downloading libusb..."
         Invoke-WebRequest -Uri $libusbUrl -OutFile $libusbZip
-        & "C:\Program Files\7-Zip\7z.exe" x $libusbZip -o"$libusbDir" -y
+        
+        Write-Host "Extracting libusb..."
+        # Используем встроенный Expand-Archive или 7z если доступен
+        if (Test-Path "C:\Program Files\7-Zip\7z.exe") {
+          & "C:\Program Files\7-Zip\7z.exe" x $libusbZip -o"$libusbDir" -y
+        } else {
+          # Альтернатива: используем choco для установки 7z или скачиваем zip версию
+          Write-Host "7-Zip not found, trying alternative method..."
+          $libusbZipUrl = "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27-binaries.zip"
+          $libusbZipFile = "$env:TEMP\libusb.zip"
+          Invoke-WebRequest -Uri $libusbZipUrl -OutFile $libusbZipFile
+          Expand-Archive -Path $libusbZipFile -DestinationPath $libusbDir -Force
+        }
+        
+        Write-Host "Looking for MSVC64 directory..."
         $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "MS64" -Recurse -Directory | Select-Object -First 1
+        if (-not $msvcDir) {
+          # Попробуем найти в другой структуре
+          $msvcDir = Get-ChildItem -Path "$libusbDir" -Filter "*MSVC*" -Recurse -Directory | Select-Object -First 1
+        }
+        
         if ($msvcDir) {
-          $env:LIBUSB_INCLUDE_DIR = "$msvcDir\include"
-          $env:LIBUSB_LIBRARY = "$msvcDir\lib\libusb-1.0.lib"
-          echo "LIBUSB_INCLUDE_DIR=$env:LIBUSB_INCLUDE_DIR" >> $env:GITHUB_ENV
-          echo "LIBUSB_LIBRARY=$env:LIBUSB_LIBRARY" >> $env:GITHUB_ENV
+          $includeDir = Join-Path $msvcDir.FullName "include"
+          $libFile = Join-Path $msvcDir.FullName "lib\libusb-1.0.lib"
+          if (Test-Path $includeDir) {
+            echo "LIBUSB_INCLUDE_DIR=$includeDir" >> $env:GITHUB_ENV
+            echo "LIBUSB_LIBRARY=$libFile" >> $env:GITHUB_ENV
+            Write-Host "libusb found: $includeDir"
+          } else {
+            Write-Host "Warning: libusb include directory not found, USB support will be disabled"
+          }
+        } else {
+          Write-Host "Warning: libusb MSVC directory not found, USB support will be disabled"
         }
     
     - name: Configure CMake
