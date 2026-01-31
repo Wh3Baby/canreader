@@ -1,6 +1,7 @@
 #include "udsprotocol.h"
 #include <QDebug>
 #include <QRegularExpression>
+#include <QEventLoop>
 
 UDSProtocol::UDSProtocol(CANInterface *canInterface, QObject *parent)
     : DiagnosticProtocol(canInterface, parent)
