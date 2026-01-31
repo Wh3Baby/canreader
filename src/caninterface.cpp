@@ -1,5 +1,6 @@
 #include "caninterface.h"
 #include <QDebug>
+#include <QThread>
 
 CANInterface::CANInterface(QObject *parent)
     : QObject(parent)
@@ -59,7 +60,14 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
         return false;
     }
     
-    m_serialPort->setPortName(portName);
+    // Проверка доступности порта
+    QSerialPortInfo portInfo(portName);
+    if (portInfo.isNull()) {
+        emit errorOccurred(QString("Порт %1 не найден в системе").arg(portName));
+        return false;
+    }
+    
+    m_serialPort->setPort(portInfo);
     
     // Scanmatic 2 Pro использует стандартные скорости последовательного порта
     // Маппинг скоростей CAN на скорости последовательного порта
@@ -79,9 +87,16 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
     
     m_currentBaudRate = baudRateKbps;
     
+    qDebug() << "Попытка открыть порт:" << portName << "со скоростью" << serialBaudRate;
+    
     if (m_serialPort->open(QIODevice::ReadWrite)) {
-        m_connected = true;
+        qDebug() << "Порт успешно открыт";
+        // Очистка буферов порта перед использованием
+        m_serialPort->clear();
         m_buffer.clear();
+        
+        // Задержка для инициализации устройства после открытия порта
+        QThread::msleep(100);
         
         // Отправка команды инициализации для Scanmatic 2 Pro
         // Формат: 0xAA (старт) + 0x01 (команда инициализации) + CAN скорость + 0x55 (конец)
@@ -101,18 +116,54 @@ bool CANInterface::connect(const QString &portDisplayName, int baudRateKbps)
         initCmd.append(static_cast<quint8>(0x00)); // Резерв
         initCmd.append(FRAME_END);
         
-        m_serialPort->write(initCmd);
-        if (!m_serialPort->waitForBytesWritten(m_writeTimeout)) {
-            emit errorOccurred("Таймаут при инициализации адаптера");
+        // Очистка выходного буфера перед отправкой
+        m_serialPort->clear(QSerialPort::Output);
+        
+        qint64 bytesWritten = m_serialPort->write(initCmd);
+        if (bytesWritten != initCmd.size()) {
+            emit errorOccurred(QString("Ошибка записи команды инициализации: записано %1 из %2 байт")
+                              .arg(bytesWritten).arg(initCmd.size()));
             m_serialPort->close();
             return false;
         }
         
+        // Увеличенный таймаут для инициализации (5 секунд)
+        if (!m_serialPort->waitForBytesWritten(5000)) {
+            emit errorOccurred("Таймаут при инициализации адаптера. Проверьте подключение устройства.");
+            m_serialPort->close();
+            return false;
+        }
+        
+        // Дополнительная задержка после отправки команды инициализации
+        QThread::msleep(200);
+        
+        // Очистка входного буфера после инициализации
+        m_serialPort->clear(QSerialPort::Input);
+        
+        m_connected = true;
         resetStatistics();
         emit connectionStatusChanged(true);
+        qDebug() << "Подключение к адаптеру установлено успешно";
         return true;
     } else {
-        emit errorOccurred(QString("Не удалось открыть порт: %1").arg(m_serialPort->errorString()));
+        QString errorMsg = QString("Не удалось открыть порт %1: %2")
+                          .arg(portName)
+                          .arg(m_serialPort->errorString());
+        
+        // Дополнительная диагностика
+        if (m_serialPort->error() == QSerialPort::PermissionError) {
+            errorMsg += "\nВозможно, недостаточно прав доступа. Попробуйте запустить с правами администратора или добавить пользователя в группу dialout (Linux).";
+        } else if (m_serialPort->error() == QSerialPort::DeviceNotFoundError) {
+            errorMsg += QString("\nУстройство не найдено. Проверьте:\n"
+                              "- Подключено ли устройство USB (VID:20A2 PID:0001)\n"
+                              "- Установлены ли драйверы\n"
+                              "- Определяется ли порт в системе (lsusb / dmesg на Linux)");
+        } else if (m_serialPort->error() == QSerialPort::OpenError) {
+            errorMsg += "\nПорт уже открыт другим приложением.";
+        }
+        
+        emit errorOccurred(errorMsg);
+        qDebug() << "Ошибка открытия порта:" << errorMsg;
         return false;
     }
 }
@@ -164,10 +215,22 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
         return false;
     }
     
+    // Проверка состояния порта перед отправкой
+    if (!m_serialPort->isOpen()) {
+        emit errorOccurred("Порт не открыт");
+        m_stats.errorsCount++;
+        return false;
+    }
+    
+    // Очистка выходного буфера перед отправкой (опционально, для надежности)
+    // m_serialPort->clear(QSerialPort::Output);
+    
     qint64 bytesWritten = m_serialPort->write(frame);
     
     if (bytesWritten == frame.size()) {
-        if (m_serialPort->waitForBytesWritten(m_writeTimeout)) {
+        // Увеличенный таймаут для записи (3 секунды вместо 1)
+        int writeTimeout = qMax(m_writeTimeout, 3000);
+        if (m_serialPort->waitForBytesWritten(writeTimeout)) {
             // Обновление статистики
             m_stats.messagesSent++;
             m_stats.messagesPerId[canId]++;
@@ -178,12 +241,19 @@ bool CANInterface::sendMessage(quint32 canId, const QByteArray &data)
             emit statisticsUpdated();
             return true;
         } else {
-            emit errorOccurred("Таймаут при записи в порт");
+            QString errorMsg = QString("Таймаут при записи в порт: %1").arg(m_serialPort->errorString());
+            emit errorOccurred(errorMsg);
             m_stats.errorsCount++;
+            
+            // Проверка, не отключилось ли устройство
+            if (m_serialPort->error() == QSerialPort::ResourceError) {
+                disconnect();
+            }
             return false;
         }
     } else {
-        emit errorOccurred(QString("Ошибка записи в порт: записано %1 из %2 байт").arg(bytesWritten).arg(frame.size()));
+        emit errorOccurred(QString("Ошибка записи в порт: записано %1 из %2 байт. Ошибка: %3")
+                          .arg(bytesWritten).arg(frame.size()).arg(m_serialPort->errorString()));
         m_stats.errorsCount++;
         return false;
     }
@@ -194,10 +264,22 @@ QStringList CANInterface::getAvailablePorts() const
     QStringList ports;
     const auto portInfos = QSerialPortInfo::availablePorts();
     
+    // VID и PID для Scanmatic 2 Pro адаптера
+    const quint16 targetVendorId = 0x20A2;
+    const quint16 targetProductId = 0x0001;
+    
     for (const QSerialPortInfo &portInfo : portInfos) {
         QString portName = portInfo.portName();
         QString description = portInfo.description();
         QString manufacturer = portInfo.manufacturer();
+        quint16 vendorId = portInfo.vendorIdentifier();
+        quint16 productId = portInfo.productIdentifier();
+        
+        // Проверка на соответствие VID/PID (опционально, если указаны)
+        bool matchesTarget = false;
+        if (vendorId == targetVendorId && productId == targetProductId) {
+            matchesTarget = true;
+        }
         
         // Формируем информативную строку для отображения
         QString displayName = portName;
@@ -206,6 +288,9 @@ QStringList CANInterface::getAvailablePorts() const
         // На Windows: COM1, COM2 и т.д.
         if (!description.isEmpty()) {
             displayName += QString(" - %1").arg(description);
+        }
+        if (matchesTarget) {
+            displayName += " [Scanmatic 2 Pro]";
         }
 #else
         // На Linux: /dev/ttyUSB0, /dev/ttyACM0 и т.д.
@@ -217,6 +302,14 @@ QStringList CANInterface::getAvailablePorts() const
                 info += manufacturer;
             }
             displayName += QString(" (%1)").arg(info);
+        }
+        if (matchesTarget) {
+            displayName += " [Scanmatic 2 Pro]";
+        }
+        // На Linux также показываем VID:PID если доступны
+        if (vendorId != 0 || productId != 0) {
+            displayName += QString(" [VID:%1 PID:%2]")
+                          .arg(vendorId, 4, 16, QChar('0')).arg(productId, 4, 16, QChar('0'));
         }
 #endif
         
