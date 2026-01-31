@@ -94,7 +94,15 @@ jobs:
     
     - name: Configure CMake
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=$env:Qt6_DIR -DLIBUSB_INCLUDE_DIR=$env:LIBUSB_INCLUDE_DIR -DLIBUSB_LIBRARY=$env:LIBUSB_LIBRARY
+        if ($env:LIBUSB_INCLUDE_DIR -and $env:LIBUSB_LIBRARY) {
+          Write-Host "Configuring CMake with libusb:"
+          Write-Host "  Include: $env:LIBUSB_INCLUDE_DIR"
+          Write-Host "  Library: $env:LIBUSB_LIBRARY"
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=$env:Qt6_DIR -DLIBUSB_INCLUDE_DIR="$env:LIBUSB_INCLUDE_DIR" -DLIBUSB_LIBRARY="$env:LIBUSB_LIBRARY"
+        } else {
+          Write-Host "ERROR: libusb paths not set! Build will fail."
+          exit 1
+        }
     
     - name: Build
       run: |
