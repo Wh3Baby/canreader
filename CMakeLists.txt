@@ -8,24 +8,41 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets SerialPort)
 
 # libusb
-find_path(LIBUSB_INCLUDE_DIR libusb-1.0/libusb.h
-    PATHS
-    /usr/include
-    /usr/local/include
-    /opt/local/include
-    "C:/libusb/include"
-    "C:/Program Files/libusb/include"
-)
+# Сначала проверяем переменные окружения (для CI/CD)
+if(DEFINED ENV{LIBUSB_INCLUDE_DIR})
+    set(LIBUSB_INCLUDE_DIR "$ENV{LIBUSB_INCLUDE_DIR}")
+endif()
+if(DEFINED ENV{LIBUSB_LIBRARY})
+    set(LIBUSB_LIBRARY "$ENV{LIBUSB_LIBRARY}")
+endif()
 
-find_library(LIBUSB_LIBRARY
-    NAMES usb-1.0 libusb-1.0
-    PATHS
-    /usr/lib
-    /usr/local/lib
-    /opt/local/lib
-    "C:/libusb/lib"
-    "C:/Program Files/libusb/lib"
-)
+# Если не заданы через переменные окружения, ищем в стандартных местах
+if(NOT LIBUSB_INCLUDE_DIR)
+    find_path(LIBUSB_INCLUDE_DIR libusb-1.0/libusb.h
+        PATHS
+        /usr/include
+        /usr/local/include
+        /opt/local/include
+        "$ENV{TEMP}/libusb"
+        "C:/libusb/include"
+        "C:/Program Files/libusb/include"
+        "$ENV{ProgramFiles}/libusb/include"
+    )
+endif()
+
+if(NOT LIBUSB_LIBRARY)
+    find_library(LIBUSB_LIBRARY
+        NAMES usb-1.0 libusb-1.0
+        PATHS
+        /usr/lib
+        /usr/local/lib
+        /opt/local/lib
+        "$ENV{TEMP}/libusb"
+        "C:/libusb/lib"
+        "C:/Program Files/libusb/lib"
+        "$ENV{ProgramFiles}/libusb/lib"
+    )
+endif()
 
 if(NOT LIBUSB_INCLUDE_DIR OR NOT LIBUSB_LIBRARY)
     message(WARNING "libusb не найден. USB подключение будет недоступно.")
