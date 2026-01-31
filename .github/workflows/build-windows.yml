@@ -24,33 +24,48 @@ jobs:
         modules: 'qtserialport'
     
     - name: Install vcpkg
-      uses: microsoft/setup-vcpkg@v1
-      with:
-        vcpkgGitCommitSha: 'latest'
+      run: |
+        $vcpkgDir = "$env:AGENT_TOOLSDIRECTORY\vcpkg"
+        if (-not (Test-Path $vcpkgDir)) {
+          New-Item -ItemType Directory -Force -Path $vcpkgDir | Out-Null
+        }
+        
+        Write-Host "Cloning vcpkg repository..."
+        if (-not (Test-Path "$vcpkgDir\.git")) {
+          git clone https://github.com/Microsoft/vcpkg.git $vcpkgDir
+        } else {
+          Push-Location $vcpkgDir
+          git pull
+          Pop-Location
+        }
+        
+        Write-Host "Bootstrapping vcpkg..."
+        Push-Location $vcpkgDir
+        .\bootstrap-vcpkg.bat
+        Pop-Location
+        
+        $env:VCPKG_ROOT = $vcpkgDir
+        $env:PATH = "$vcpkgDir;$env:PATH"
+        echo "VCPKG_ROOT=$vcpkgDir" >> $env:GITHUB_ENV
+        echo "PATH=$vcpkgDir;$env:PATH" >> $env:GITHUB_ENV
+        
+        Write-Host "vcpkg installed at: $vcpkgDir"
     
     - name: Install libusb via vcpkg
       run: |
-        vcpkg install libusb:x64-windows
         $vcpkgRoot = $env:VCPKG_ROOT
         if (-not $vcpkgRoot) {
-          # Попробуем найти vcpkg в стандартных местах
-          $possiblePaths = @(
-            "$env:AGENT_TOOLSDIRECTORY\vcpkg",
-            "C:\vcpkg",
-            "$env:ProgramFiles\vcpkg"
-          )
-          foreach ($path in $possiblePaths) {
-            if (Test-Path $path) {
-              $vcpkgRoot = $path
-              break
-            }
-          }
+          $vcpkgRoot = "$env:AGENT_TOOLSDIRECTORY\vcpkg"
         }
         
-        if (-not $vcpkgRoot) {
-          Write-Host "ERROR: VCPKG_ROOT not set and vcpkg not found in standard locations"
+        Write-Host "Installing libusb via vcpkg..."
+        Push-Location $vcpkgRoot
+        .\vcpkg.exe install libusb:x64-windows
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "ERROR: vcpkg install failed"
           exit 1
         }
+        Pop-Location
         
         $includeDir = Join-Path $vcpkgRoot "installed\x64-windows\include"
         $libFile = Join-Path $vcpkgRoot "installed\x64-windows\lib\libusb-1.0.lib"
